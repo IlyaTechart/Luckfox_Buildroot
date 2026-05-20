@@ -100,6 +100,14 @@ void* thread_cdc_generic(void* arg)
 
 
 void* thread_display(void* arg)
+{
+    
+
+    while(1)
+    {
+
+    }
+}
 
 
 

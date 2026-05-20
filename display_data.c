@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 199309L
-#include "dispaly_data.h"
-#include "frames_structure.h"
+#include "display_data.h"
+
 
 
 

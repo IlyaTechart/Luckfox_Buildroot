@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <time.h>
-
+#include "frames_structure.h"
 
 
 void logger_print_one_frame(const ModulData_t *m, size_t frame_index);

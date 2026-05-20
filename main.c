@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <mqueue.h>
+#include <time.h>
 #include "threads.h"
 #include "usb_com.h"
 
@@ -30,13 +31,13 @@ int main(int argc, char * argv[])
     int result;
     result = pthread_create(&Thread_CDC_Device.pthread, NULL, Thread_CDC_Device.threads_cdc , &Thread_CDC_Device);
     if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток generic");
+    fprintf(stderr,"Не удалось создать поток: generic\n");
     return EXIT_FAILURE;
     }
 
-    result = pthread_create(&Thread_CDC_Device.pthread, NULL, Thread_CDC_Device.threads_cdc , &Thread_CDC_Device);
+    result = pthread_create(&pthread_display, NULL, thread_display , NULL);
     if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток generic");
+    fprintf(stderr,"Не удалось создать поток: display\n");
     return EXIT_FAILURE;
     }
 
