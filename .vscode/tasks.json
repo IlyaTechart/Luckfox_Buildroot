@@ -1,0 +1,79 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "1. Build for Luckfox (Debug)",
+            "type": "shell",
+            "command": "mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake .. && make -j$(nproc)",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Сборка mylogger с символами (-g -O0) для ARM"
+        },
+        {
+            "label": "2. Deploy to Luckfox",
+            "type": "shell",
+            "command": "ssh -o ConnectTimeout=5 root@${config:luckfox.ip} 'killall gdbserver 2>/dev/null; true' && scp ${workspaceFolder}/build/mylogger root@${config:luckfox.ip}:/userdata/Logger_new && ssh root@${config:luckfox.ip} 'chmod +x /userdata/Logger_new'",
+            "dependsOn": "1. Build for Luckfox (Debug)",
+            "problemMatcher": [],
+            "detail": "Релизный бинарник → /userdata/Logger_new (для update_app)"
+        },
+        {
+            "label": "3. Deploy GDB binary to Luckfox",
+            "type": "shell",
+            "command": "ssh -o ConnectTimeout=5 root@${config:luckfox.ip} 'killall gdbserver 2>/dev/null; true' && scp ${workspaceFolder}/build/mylogger root@${config:luckfox.ip}:/userdata/Logger_new.gdb && ssh root@${config:luckfox.ip} 'chmod +x /userdata/Logger_new.gdb'",
+            "dependsOn": "1. Build for Luckfox (Debug)",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            },
+            "detail": "Отладочный бинарник → /userdata/Logger_new.gdb (без gdbserver)"
+        },
+        {
+            "label": "4. Start gdbserver on board",
+            "type": "shell",
+            "command": "ssh -o ConnectTimeout=5 -o ServerAliveInterval=30 root@${config:luckfox.ip} 'killall gdbserver Logger_new.gdb 2>/dev/null; true; exec gdbserver --once :1234 /userdata/Logger_new.gdb'",
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "gdbserver",
+                "pattern": { "regexp": "^$" },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "Process .* created",
+                    "endsPattern": "Listening on port 1234"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "gdbserver"
+            },
+            "detail": "gdbserver --once :1234 (завершится после Stop в VS Code)"
+        },
+        {
+            "label": "5. Stop gdbserver on board",
+            "type": "shell",
+            "command": "ssh -o ConnectTimeout=5 root@${config:luckfox.ip} 'killall gdbserver Logger_new.gdb 2>/dev/null; true'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            },
+            "detail": "Принудительно остановить gdbserver и Logger_new.gdb на плате"
+        },
+        {
+            "label": "Prepare board for GDB",
+            "dependsOn": [
+                "1. Build for Luckfox (Debug)",
+                "3. Deploy GDB binary to Luckfox",
+                "4. Start gdbserver on board"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "detail": "Сборка + Logger_new.gdb + gdbserver (для F5)"
+        }
+    ]
+}
