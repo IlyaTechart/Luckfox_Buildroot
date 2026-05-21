@@ -3,7 +3,8 @@
 #include "usb_com.h"
 #include "frames_structure.h"
 
-
+/// @brief 
+/////////
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
 
@@ -97,6 +98,7 @@ ModulData_t* Queue_Pop(Queue_Handle_t *Queue, Queue_state_t Mode)
 void* thread_cdc_generic(void* arg)
 {
     Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
+    Queue_Handle_t Queue_Dump;
     uint32_t ret = 0;
 
     ret = USB_Com_Init(&Thread_CDC_Device->COM_Ports_Handle[0]);
@@ -127,6 +129,8 @@ void* thread_cdc_generic(void* arg)
     }
 
     struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
+
+    Queue_Init(&Queue_Dump, NUMBER_ELLEMENTS_RECESIVE);
 
     DumpData_t DumpData_Rx = {0};
     DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
@@ -175,6 +179,8 @@ void* thread_cdc_generic(void* arg)
                         
                         // Если данные успешно прочитаны, кладем их в очередь
                         Queue_Push(&Queue_Dump, DumpData_Rx.buffer, QUEUE_WAIT_STATE);
+
+                        DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
                     }
 
                 }
