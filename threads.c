@@ -7,6 +7,90 @@
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
 
+uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
+{
+    Queue->head = 0;
+    Queue->tail = 0;
+    Queue->data = (ModulData_t**)calloc(len, sizeof(ModulData_t*));
+    Queue->len = len;
+    Queue->count = 0;
+
+    
+    if(pthread_mutex_init(&Queue->mutex, NULL) != 0){
+        perror("Ошибка инициализации мьютекса\n");
+        return 1;
+    }
+    if(pthread_cond_init(&Queue->cond_not_empty, NULL) != 0){
+        perror("Ошибка инициализации динамической переменной\n");
+        return 1;
+    }
+    if(pthread_cond_init(&Queue->cond_not_full, NULL) != 0){
+        perror("Ошибка инициализации динамической переменной\n");
+        return 1;
+    }
+
+    return 0;
+}
+void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode)
+{
+    pthread_mutex_lock(&Queue->mutex);
+    
+    if(Mode == QUEUE_WAIT_STATE){
+        while(Queue->count == Queue->len){
+            if(pthread_cond_wait(&Queue->cond_not_full, &Queue->mutex) != 0)
+            {
+                perror("Push: Неуспешное выполнение функции pthread_cond_wait\n");
+            }
+        }
+    }
+
+    if (Queue->count < Queue->len) {
+        Queue->data[Queue->head] = data_ptr;
+        Queue->head = (Queue->head + 1) % Queue->len;
+        Queue->count++;
+    } else {
+        printf("Очередь переполнена, кадр отброшен!\n");
+    }
+
+    if(pthread_cond_signal(&Queue->cond_not_empty) != 0)
+    {
+        perror("Push: Неуспешное выполнение функции pthread_cond_signal\n");
+    } 
+
+    pthread_mutex_unlock(&Queue->mutex);
+}
+
+ModulData_t* Queue_Pop(Queue_Handle_t *Queue, Queue_state_t Mode)
+{
+    ModulData_t* result = NULL;
+    pthread_mutex_lock(&Queue->mutex);
+    
+    if(Mode == QUEUE_WAIT_STATE){
+        while(Queue->count == 0){
+            if(pthread_cond_wait(&Queue->cond_not_empty, &Queue->mutex) != 0)
+            {
+                perror("Pop: Неуспешное выполнение функции pthread_cond_wait\n");
+            }
+        }
+    }
+
+    if (Queue->count > 0) {
+        result = Queue->data[Queue->tail];
+        Queue->tail = (Queue->tail + 1) % Queue->len;
+        Queue->count--;
+    }
+
+    if(pthread_cond_signal(&Queue->cond_not_full) != 0)
+    {
+        perror("Pop: Неуспешное выполнение функции pthread_cond_signal\n");
+    } 
+
+    pthread_mutex_unlock(&Queue->mutex);
+    return result;
+}
+
+
+
 /*
 @bref: Поток осуществяет приём статических данных с логера, а так же прём дампов.
 */
@@ -88,6 +172,9 @@ void* thread_cdc_generic(void* arg)
                             close(COM_Ports_Active->File_Descriptor);
                             continue;
                         }
+                        
+                        // Если данные успешно прочитаны, кладем их в очередь
+                        Queue_Push(&Queue_Dump, DumpData_Rx.buffer, QUEUE_WAIT_STATE);
                     }
 
                 }
@@ -101,11 +188,14 @@ void* thread_cdc_generic(void* arg)
 
 void* thread_display(void* arg)
 {
-    
-
     while(1)
     {
-
+        ModulData_t* data = Queue_Pop(&Queue_Dump, QUEUE_WAIT_STATE);
+        if (data != NULL) {
+            // ... Обработка данных ...
+            // ВАЖНО: Освободить память, когда данные больше не нужны
+            free(data);
+        }
     }
 }
 
