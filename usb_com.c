@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 199309L
 #include "usb_com.h"
 #include <time.h>
-
+#include "frames_structure.h"
 
 COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
 
@@ -76,6 +76,7 @@ USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t siz
                 
                 if (elapsed_ms >= Timeout) {
                     printf("Тайм-аут при чтении из %s\n", COMPort->path_ttyACM);
+                    printf("Общее колличество принятых данных: %d Байт %u.%u элементов\n", count_bytse, count_bytse / sizeof(ModulData_t), count_bytse % sizeof(ModulData_t));
                     return USB_TIMEOUT;
                 }
                 usleep(1000); 
@@ -93,7 +94,7 @@ USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t siz
 
     }
 
-    printf("Общее колличество принятых данных: %d Байт\n", count_bytse);
+   printf("Общее колличество принятых данных: %d Байт %u.%u элементов\n", count_bytse, count_bytse / sizeof(ModulData_t), count_bytse % sizeof(ModulData_t));
 
 
     return USB_OK;
