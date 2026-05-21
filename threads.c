@@ -7,6 +7,7 @@
 /////////
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
+Queue_Handle_t Queue_Dump;
 
 
 /// @brief Инициализацияя очереди, передающей между потоками дамп 
@@ -20,7 +21,7 @@ uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
     Queue->data = (ModulData_t*)calloc(len, sizeof(ModulData_t));
     Queue->len = len;
     Queue->count = 0;
-
+    snprintf( Queue->name, sizeof(Queue->name), "Dump queue");
     
     if(pthread_mutex_init(&Queue->mutex, NULL) != 0){
         perror("Ошибка инициализации мьютекса\n");
@@ -132,7 +133,6 @@ uint8_t Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_rea
 void* thread_cdc_generic(void* arg)
 {
     Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
-    Queue_Handle_t Queue_Dump;
     uint32_t ret = 0;
 
     ret = USB_Com_Init(&Thread_CDC_Device->COM_Ports_Handle[0]);
@@ -167,7 +167,7 @@ void* thread_cdc_generic(void* arg)
     Queue_Init(&Queue_Dump, NUMBER_ELLEMENTS_RECESIVE);
 
     DumpData_t DumpData_Rx = {0};
-    DumpData_Rx.buffer = (DumpData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+    DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
 
     
     while(1)
@@ -211,10 +211,9 @@ void* thread_cdc_generic(void* arg)
                             continue;
                         }
                         
-                        // Если данные успешно прочитаны, кладем их в очередь
-                        Queue_Push(&Queue_Dump, DumpData_Rx.buffer, QUEUE_WAIT_STATE);
-
-                        DumpData_Rx.buffer[] = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+                        for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
+                            Queue_Push(&Queue_Dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
+                        }
                     }
 
                 }
@@ -228,14 +227,15 @@ void* thread_cdc_generic(void* arg)
 
 void* thread_display(void* arg)
 {
+    ModulData_t* ModulData_print = (ModulData_t*)calloc( NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t) );
+
     while(1)
     {
-        ModulData_t* data = Queue_Pop(&Queue_Dump, QUEUE_WAIT_STATE);
-        if (data != NULL) {
-            // ... Обработка данных ...
-            // ВАЖНО: Освободить память, когда данные больше не нужны
-            free(data);
-        }
+
+        uint8_t res = Queue_Pop(&Queue_Dump, ModulData_print, Queue_Dump.count, QUEUE_WAIT_STATE);
+
+
+
     }
 }
 
