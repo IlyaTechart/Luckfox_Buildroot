@@ -8,11 +8,16 @@
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
 
+
+/// @brief Инициализацияя очереди, передающей между потоками дамп 
+/// @param Queue Указатель на очередь
+/// @param len Коллиечство кадров в очереди 
+/// @return Если инциализация успешна - 0, в противном случае - 1 
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
 {
     Queue->head = 0;
     Queue->tail = 0;
-    Queue->data = (ModulData_t**)calloc(len, sizeof(ModulData_t*));
+    Queue->data = (ModulData_t*)calloc(len, sizeof(ModulData_t));
     Queue->len = len;
     Queue->count = 0;
 
@@ -32,6 +37,11 @@ uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
 
     return 0;
 }
+
+/// @brief Функция записи ондого кадра в буфер 
+/// @param Queue Указатель на очередь 
+/// @param data_ptr Указатель на адрес типа ModulData_t одного кадра 
+/// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE)
 void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode)
 {
     pthread_mutex_lock(&Queue->mutex);
@@ -44,13 +54,20 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
             }
         }
     }
+    uint32_t next_head = (Queue->head + 1) % Queue->len;
 
-    if (Queue->count < Queue->len) {
-        Queue->data[Queue->head] = data_ptr;
-        Queue->head = (Queue->head + 1) % Queue->len;
+    if(Queue->head == Queue->tail)
+    {
+        memcpy(&Queue->data[Queue->head], data_ptr, sizeof(ModulData_t));
+        Queue->tail = (Queue->tail + 1) % Queue->len;
+        Queue->head = next_head;
+        if(Queue->count < Queue->len){
+            Queue->count++;
+        }
+    }else{
+        memcpy(&Queue->data[Queue->head], data_ptr, sizeof(ModulData_t));
+        Queue->head = next_head;
         Queue->count++;
-    } else {
-        printf("Очередь переполнена, кадр отброшен!\n");
     }
 
     if(pthread_cond_signal(&Queue->cond_not_empty) != 0)
@@ -61,9 +78,19 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
     pthread_mutex_unlock(&Queue->mutex);
 }
 
-ModulData_t* Queue_Pop(Queue_Handle_t *Queue, Queue_state_t Mode)
+/// @brief Чтение из буфера запрашивеймого колличества кадров 
+/// @param Queue 
+/// @param data_ptr 
+/// @param cnt_read_frame 
+/// @param Mode 
+/// @return 
+uint8_t Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode)
 {
-    ModulData_t* result = NULL;
+    if(cnt_read_frame > Queue->count){
+        printf("Отсутвует запрашиваемый объём данных в буфере\n");
+        return 1;
+    }
+
     pthread_mutex_lock(&Queue->mutex);
     
     if(Mode == QUEUE_WAIT_STATE){
@@ -75,11 +102,18 @@ ModulData_t* Queue_Pop(Queue_Handle_t *Queue, Queue_state_t Mode)
         }
     }
 
-    if (Queue->count > 0) {
-        result = Queue->data[Queue->tail];
-        Queue->tail = (Queue->tail + 1) % Queue->len;
-        Queue->count--;
+    for(uint32_t i = 0; i < cnt_read_frame; i++){
+        if( (Queue->tail + 1) % Queue->len == Queue->head){
+            break;
+        }else{
+            memcpy(data_ptr + i, &Queue->data[Queue->tail], sizeof(ModulData_t));
+            memset(&Queue->data[Queue->tail], 0x00, sizeof(ModulData_t));
+            Queue->tail = (Queue->tail + 1) % Queue->len;
+            Queue->count--;
+        }
     }
+
+    //memcpy(data_ptr, Queue->data[Queue->tail], cnt_read_frame);
 
     if(pthread_cond_signal(&Queue->cond_not_full) != 0)
     {
@@ -87,7 +121,7 @@ ModulData_t* Queue_Pop(Queue_Handle_t *Queue, Queue_state_t Mode)
     } 
 
     pthread_mutex_unlock(&Queue->mutex);
-    return result;
+    return 0;
 }
 
 
@@ -133,7 +167,7 @@ void* thread_cdc_generic(void* arg)
     Queue_Init(&Queue_Dump, NUMBER_ELLEMENTS_RECESIVE);
 
     DumpData_t DumpData_Rx = {0};
-    DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+    DumpData_Rx.buffer = (DumpData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
 
     
     while(1)
@@ -168,7 +202,7 @@ void* thread_cdc_generic(void* arg)
 
                     if(DumpData_Rx.count_elements < 1){
                         printf("Ошибка прёма данных: слишком маленькое колличество ожидаемых данных\n");
-                    }else if(DumpData_Rx.count_elements >= 2){
+                    }else if(DumpData_Rx.count_elements >= 1){
                         printf("Успешный приём head сообщания и начало ожидание приёма данных\n");
                         if(USB_Read_COM(COM_Ports_Active, DumpData_Rx.buffer, DumpData_Rx.count_elements * sizeof(ModulData_t), 250) == USB_ERR){
                             printf("Устройство %s отключено.\n", COM_Ports_Active->path_ttyACM);
@@ -187,7 +221,7 @@ void* thread_cdc_generic(void* arg)
             }
         }
     }
-
+    free(DumpData_Rx.buffer);
     return 0;
 }
 

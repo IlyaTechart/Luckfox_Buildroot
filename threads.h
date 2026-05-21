@@ -56,7 +56,7 @@ extern Queue_Handle_t Queue_Dump;
 
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
 void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode);
-ModulData_t* Queue_Pop(Queue_Handle_t *Queue, Queue_state_t Mode);
+uint8_t Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);
 

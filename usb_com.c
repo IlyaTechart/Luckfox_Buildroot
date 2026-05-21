@@ -56,7 +56,7 @@ uint32_t USB_Com_Init(COM_Ports_Handle_t* COM_Port)
 
 }
 
-USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size, uint32_t Timeout)
+USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes, uint32_t Timeout)
 {
     int num_bytes_rx = 0;
     uint32_t count_bytse = 0;
@@ -65,9 +65,9 @@ USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t siz
     struct timespec start_time, current_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time); // Засекаем время старта
 
-    while(count_bytse < size){
+    while(count_bytse < size_bytes){
 
-        num_bytes_rx = read(COMPort->File_Descriptor, ptr + count_bytse, size - count_bytse);
+        num_bytes_rx = read(COMPort->File_Descriptor, ptr + count_bytse, size_bytes - count_bytse);
         if(num_bytes_rx == -1){
             if(errno == EAGAIN || errno == EWOULDBLOCK){
                 clock_gettime(CLOCK_MONOTONIC, &current_time);
