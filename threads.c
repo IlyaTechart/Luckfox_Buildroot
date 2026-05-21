@@ -211,8 +211,8 @@ void* thread_cdc_generic(void* arg)
                         printf("Ошибка прёма данных: слишком маленькое колличество ожидаемых данных\n");
                     }else if(DumpData_Rx.count_elements >= 1){
                         printf("Успешный приём head сообщания и начало ожидание приёма данных\n");
-                        printf("Ожидаемое колличество принемаемых данных %u\n", DumpData_Rx.count_elements);
-                        if(USB_Read_COM(COM_Ports_Active, DumpData_Rx.buffer, DumpData_Rx.count_elements * sizeof(ModulData_t), 250) == USB_ERR){
+                        printf("Ожидаемое колличество принемаемых frame-ов %u\n", DumpData_Rx.count_elements);
+                        if(USB_Read_COM(COM_Ports_Active, DumpData_Rx.buffer, DumpData_Rx.count_elements * sizeof(ModulData_t), 10000) == USB_ERR){
                             printf("Устройство %s отключено после тчения data\n", COM_Ports_Active->path_ttyACM);
                             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
                             close(COM_Ports_Active->File_Descriptor);

@@ -130,6 +130,6 @@ typedef struct {
 	ModulData_t *buffer;
 	uint32_t time_event;
 	uint32_t tail_frames;
-}DumpData_t;
+}__attribute__((packed))DumpData_t;
 
 
