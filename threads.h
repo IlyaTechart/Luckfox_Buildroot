@@ -26,7 +26,7 @@ typedef enum{
 }Queue_state_t;
 
 typedef struct{
-    ModulData_t **data;
+    ModulData_t *data;
     int head; // Индекс записи (указывает на +1 к текущем записанным данным)
     int tail; // Индекс чтения (указыыает на самые старые данные)
     int count; // Колличество текущих элементов 
@@ -51,6 +51,7 @@ typedef struct
 
 Thread_CDC_Device_t Thread_CDC_Device;
 pthread_t pthread_display;
+extern Queue_Handle_t Queue_Dump;
 
 
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);

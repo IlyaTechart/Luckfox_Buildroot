@@ -28,9 +28,6 @@ int main(int argc, char * argv[])
     Thread_CDC_Device.threads_cdc = thread_cdc_generic;
     Thread_CDC_Device.TotalNumberOfDevice = 1;
 
-    Queue_Handle_t Queue_Dump;
-    Queue_Init(&Queue_Dump, NUMBER_ELLEMENTS_RECESIVE);
-
     int result;
     result = pthread_create(&Thread_CDC_Device.pthread, NULL, Thread_CDC_Device.threads_cdc , &Thread_CDC_Device);
     if (result != 0) {

@@ -180,7 +180,7 @@ void* thread_cdc_generic(void* arg)
                         // Если данные успешно прочитаны, кладем их в очередь
                         Queue_Push(&Queue_Dump, DumpData_Rx.buffer, QUEUE_WAIT_STATE);
 
-                        DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+                        DumpData_Rx.buffer[] = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
                     }
 
                 }
