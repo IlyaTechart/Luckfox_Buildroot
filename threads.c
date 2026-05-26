@@ -80,11 +80,11 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
 }
 
 /// @brief Чтение из буфера запрашивеймого колличества кадров 
-/// @param Queue 
-/// @param data_ptr 
-/// @param cnt_read_frame 
-/// @param Mode 
-/// @return Колличество прочитанных кадров
+/// @param Queue Указатель на очередь 
+/// @param data_ptr Указатель на массив куда будут записаны данные 
+/// @param cnt_read_frame Количесвто запрашиваемых кадров 
+/// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE)
+/// @return Колличество прочитанных кадров N
 int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode)
 {
     uint32_t count_read_frame = 0;
@@ -192,8 +192,9 @@ void* thread_cdc_generic(void* arg)
 
             if(events[i].events & EPOLLIN){
 
-                int num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx, sizeof(DumpData_Rx.head_frames) + sizeof(DumpData_Rx.count_elements));
+                int num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx.head_frames, sizeof(DumpData_Rx.head_frames));
                 if(num_bytes == -1){
+                    error_label:
                     perror("Ошибка функции read(): не прочитала файл\n"); 
                     continue;
                 }else if(num_bytes == 0){
@@ -202,6 +203,9 @@ void* thread_cdc_generic(void* arg)
                     close(COM_Ports_Active->File_Descriptor);
                     continue;
                 }
+                num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx.count_elements, sizeof(DumpData_Rx.count_elements));
+                if(num_bytes == - 1) goto error_label;
+
 
                 if(DumpData_Rx.head_frames != ID_DUMP_FRAME_START){
                     printf("Ошибка прёма данных: неверный ID head frame\n");

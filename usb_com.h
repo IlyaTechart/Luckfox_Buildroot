@@ -9,6 +9,11 @@
 #include <fcntl.h>
 #include <termios.h>
 
+// ID head-ров сообщений от Device по их типу 
+#define ID_AVE_FRAME_START   (const uint32_t)0x22446688
+#define ID_DUMP_FRAME_START  (const uint32_t)0x336699FF
+
+#define ID_TAIL_FRMES        (const uint32_t)0x55AA55AA
 
 typedef enum{
     USB_OK,

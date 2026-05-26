@@ -90,11 +90,20 @@ USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t siz
         }else if(num_bytes_rx > 0){
             printf("Принято %d Байт\n", num_bytes_rx);
             count_bytse += num_bytes_rx;
+            if(count_bytse > sizeof(uint32_t)){
+                uint32_t current_tail;
+                memcpy(&current_tail, ptr + count_bytse - sizeof(uint32_t), sizeof(uint32_t));
+                if(current_tail == ID_TAIL_FRMES){
+                    printf("Найдён маркер конца пакета (Tail)!\n");
+                    count_bytse -= sizeof(uint32_t);
+                    break;
+                }
+            }
         }
 
     }
 
-   printf("Общее колличество принятых данных: %d Байт %u.%u элементов\n", count_bytse, count_bytse / sizeof(ModulData_t), count_bytse % sizeof(ModulData_t));
+   printf("Общее колличество принятых полезных данных: %d Байт %u.%u элементов\n", count_bytse, count_bytse / sizeof(ModulData_t), count_bytse % sizeof(ModulData_t));
 
 
     return USB_OK;

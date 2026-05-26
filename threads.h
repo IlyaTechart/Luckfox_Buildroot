@@ -16,9 +16,7 @@
 #define SUPPORT_NUMBER_DEVICE_USB 24
 #define NUMBER_ELLEMENTS_RECESIVE 10000
 
-// ID head-ров сообщений от Device по их типу 
-#define ID_AVE_FRAME_START   (const uint32_t)0x22446688
-#define ID_DUMP_FRAME_START  (const uint32_t)0x336699FF
+
 
 typedef enum{
     QUEUE_PASS_STATE,
