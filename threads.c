@@ -39,14 +39,14 @@ uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
     return 0;
 }
 
-/// @brief Функция записи ондого кадра в буфер 
+/// @brief Функция записи ондого кадра в буфер. Если очередь переполнена, старые данные стираются.
 /// @param Queue Указатель на очередь 
 /// @param data_ptr Указатель на адрес типа ModulData_t одного кадра 
 /// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE)
 void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode)
-{
+{ 
     pthread_mutex_lock(&Queue->mutex);
-    
+
     if(Mode == QUEUE_WAIT_STATE){
         while(Queue->count == Queue->len){
             if(pthread_cond_wait(&Queue->cond_not_full, &Queue->mutex) != 0)
@@ -55,9 +55,10 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
             }
         }
     }
+
     uint32_t next_head = (Queue->head + 1) % Queue->len;
 
-    if(Queue->head == Queue->tail)
+    if(next_head == Queue->tail)
     {
         memcpy(&Queue->data[Queue->head], data_ptr, sizeof(ModulData_t));
         Queue->tail = (Queue->tail + 1) % Queue->len;
@@ -87,14 +88,9 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
 /// @return Колличество прочитанных кадров N
 int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode)
 {
-    uint32_t count_read_frame = 0;
-    if(cnt_read_frame > Queue->count){
-        printf("Отсутвует запрашиваемый объём данных в буфере\n");
-        return -1;
-    }
-
+    uint32_t count_copyed_frame = 0;
     pthread_mutex_lock(&Queue->mutex);
-    
+
     if(Mode == QUEUE_WAIT_STATE){
         while(Queue->count == 0){
             if(pthread_cond_wait(&Queue->cond_not_empty, &Queue->mutex) != 0)
@@ -103,17 +99,21 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
             }
         }
     }
+    if(cnt_read_frame > Queue->count){
+        printf("Отсутвует запрашиваемый объём данных в буфере\n");
+        pthread_cond_signal(&Queue->cond_not_full);
+        pthread_mutex_unlock(&Queue->mutex);
+        return -1;
+    }
 
-    for(uint32_t i = 0; i < cnt_read_frame; i++){
-        if( (Queue->tail + 1) % Queue->len == Queue->head){
-            break;
-        }else{
-            memcpy(data_ptr + i, &Queue->data[Queue->tail], sizeof(ModulData_t));
-            memset(&Queue->data[Queue->tail], 0x00, sizeof(ModulData_t));
-            Queue->tail = (Queue->tail + 1) % Queue->len;
-            Queue->count--;
-            count_read_frame++;
-        }
+    while (count_copyed_frame < cnt_read_frame && Queue->count > 0){
+
+        memcpy(data_ptr + count_copyed_frame, &Queue->data[Queue->tail], sizeof(ModulData_t));
+        memset(&Queue->data[Queue->tail], 0x00, sizeof(ModulData_t));
+        Queue->tail = (Queue->tail + 1) % Queue->len;
+        Queue->count--;
+        count_copyed_frame++;
+        
     }
 
     //memcpy(data_ptr, Queue->data[Queue->tail], cnt_read_frame);
@@ -124,7 +124,7 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     } 
 
     pthread_mutex_unlock(&Queue->mutex);
-    return count_read_frame;
+    return count_copyed_frame;
 }
 
 
@@ -215,16 +215,21 @@ void* thread_cdc_generic(void* arg)
                         printf("Ошибка прёма данных: слишком маленькое колличество ожидаемых данных\n");
                     }else if(DumpData_Rx.count_elements >= 1){
                         printf("Успешный приём head сообщания и начало ожидание приёма данных\n");
-                        printf("Ожидаемое колличество принемаемых frame-ов %u\n", DumpData_Rx.count_elements);
-                        if(USB_Read_COM(COM_Ports_Active, DumpData_Rx.buffer, DumpData_Rx.count_elements * sizeof(ModulData_t), 10000) == USB_ERR){
+                        printf("Ожидаемое колличество принемаемых frame-ов %u - байт %u\n", DumpData_Rx.count_elements, DumpData_Rx.count_elements * sizeof(ModulData_t));
+                        if(USB_Read_COM(COM_Ports_Active, DumpData_Rx.buffer, DumpData_Rx.count_elements * sizeof(ModulData_t), 10000) != USB_OK){
                             printf("Устройство %s отключено после тчения data\n", COM_Ports_Active->path_ttyACM);
                             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
                             close(COM_Ports_Active->File_Descriptor);
                             continue;
                         }
+
+                        num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx.tail_frames, sizeof(DumpData_Rx.tail_frames));
+                        if(num_bytes == -1) goto error_label;
                         
-                        for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
-                            Queue_Push(&Queue_Dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
+                        if(DumpData_Rx.tail_frames == ID_TAIL_FRMES){
+                            for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
+                                Queue_Push(&Queue_Dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
+                            }
                         }
                     }
 
