@@ -12,6 +12,34 @@
 #include "threads.h"
 #include "usb_com.h"
 
+/*
+ * ============================================================
+ * Программа захвата дампов с 24 USB-устройств (ttyACM*)
+ * для одноплатного компьютера Luckfox Pico Ultra.
+ *
+ * 1. Место хранения дампов:
+ *    - Выбран каталог /userdata/dump_log/
+ *    - /userdata — раздел пользовательских данных, доступный для записи
+ *      и сохраняющийся между перезагрузками.
+ *    - Каталог создаётся программой, если отсутствует (mkdir).           ?
+ *    - Каждый дамп-файл открывается в режиме добавления (O_APPEND),
+ *      чтобы при перезапуске данные не терялись.
+ *
+ * 2. Сопоставление устройств и файлов:
+ *    - Устройства обнаруживаются по маске /dev/ttyACM*
+ *    - Из имени извлекается номер: /dev/ttyACM0 -> номер 0
+ *    - Формируется имя дамп-файла:
+ *        /userdata/dump_log/dump_ACM<номер>
+ *    - Примеры:
+ *        /dev/ttyACM0  -> /userdata/dump_log/dump_ACM0
+ *        /dev/ttyACM5  -> /userdata/dump_log/dump_ACM5
+ *        /dev/ttyACM23 -> /userdata/dump_log/dump_ACM23
+ *    - Логика реализуется через сканирование glob("/dev/ttyACM*")
+ *      и snprintf() для формирования пути.
+ *
+ * ============================================================
+ */
+
 
 
 // Вернём количество найденных устройств (0, если ничего не найдено)  // TODO (сделать входщие значения функции в виде Thread_CDC_Device)
@@ -82,6 +110,13 @@ int main(int argc, char * argv[])
     printf("Поток прёма данных создан\n");
 
     result = pthread_create(&pthread_display, NULL, thread_display , NULL);
+    if (result != 0) {
+    fprintf(stderr,"Не удалось создать поток: display\n");
+    return EXIT_FAILURE;
+    }
+    printf("Поток вывода информации созадн\n");
+
+    result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
     if (result != 0) {
     fprintf(stderr,"Не удалось создать поток: display\n");
     return EXIT_FAILURE;
