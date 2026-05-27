@@ -58,7 +58,7 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
 
     uint32_t next_head = (Queue->head + 1) % Queue->len;
 
-    if(next_head == Queue->tail)
+    if(Queue->count == Queue->len)
     {
         memcpy(&Queue->data[Queue->head], data_ptr, sizeof(ModulData_t));
         Queue->tail = (Queue->tail + 1) % Queue->len;
@@ -80,7 +80,7 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
     pthread_mutex_unlock(&Queue->mutex);
 }
 
-/// @brief Чтение из буфера запрашивеймого колличества кадров 
+/// @brief Чтение из буфера запрашивеймого колличества кадров. Если 
 /// @param Queue Указатель на очередь 
 /// @param data_ptr Указатель на массив куда будут записаны данные 
 /// @param cnt_read_frame Количесвто запрашиваемых кадров 
@@ -92,18 +92,15 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     pthread_mutex_lock(&Queue->mutex);
 
     if(Mode == QUEUE_WAIT_STATE){
-        while(Queue->count == 0){
+        while(Queue->count < cnt_read_frame || Queue->count == 0){
             if(pthread_cond_wait(&Queue->cond_not_empty, &Queue->mutex) != 0)
             {
                 perror("Pop: Неуспешное выполнение функции pthread_cond_wait\n");
+                pthread_cond_signal(&Queue->cond_not_full);
+                pthread_mutex_unlock(&Queue->mutex);
+                return -1;
             }
         }
-    }
-    if(cnt_read_frame > Queue->count){
-        printf("Отсутвует запрашиваемый объём данных в буфере\n");
-        pthread_cond_signal(&Queue->cond_not_full);
-        pthread_mutex_unlock(&Queue->mutex);
-        return -1;
     }
 
     while (count_copyed_frame < cnt_read_frame && Queue->count > 0){
@@ -251,6 +248,7 @@ void* thread_display(void* arg)
     {
 
         int count_data = Queue_Pop(&Queue_Dump, ModulData_print, Queue_Dump.count, QUEUE_WAIT_STATE);
+        printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_Dump.count, Queue_Dump.head, Queue_Dump.tail);
         if(count_data < 0){
             printf("Ошибка чтения из кольцевого буфера\n");
         }else{
@@ -260,8 +258,8 @@ void* thread_display(void* arg)
                     logger_print_one_frame(&ModulData_print[i], i);
                 }
             }
-
         }
+
     }
 }
 
