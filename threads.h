@@ -49,6 +49,7 @@ typedef struct
 
 Thread_CDC_Device_t Thread_CDC_Device;
 pthread_t pthread_display;
+pthread_t pthread_filesystem;
 extern Queue_Handle_t Queue_Dump;
 
 
@@ -57,4 +58,4 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
 int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);
-
+void* thread_filesystem(void* arg);

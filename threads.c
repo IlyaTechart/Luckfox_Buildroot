@@ -2,11 +2,13 @@
 #include "threads.h"
 #include "usb_com.h"
 #include "frames_structure.h"
+#include "rw_file.h"
 
 /// @brief 
 /////////
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
+pthread_t pthread_filesystem;
 Queue_Handle_t Queue_Dump;
 
 
@@ -126,9 +128,9 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
 
 
 
-/*
-@bref: Поток осуществяет приём статических данных с логера, а так же прём дампов.
-*/
+/// @brief Поток осуществяет приём статических данных с логера, а так же прём дампов.
+/// @param arg Указатель на струтуру типа Thread_CDC_Device*
+/// @return 0 - если поток завершается 
 void* thread_cdc_generic(void* arg)
 {
     Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
@@ -183,62 +185,57 @@ void* thread_cdc_generic(void* arg)
             exit(EXIT_FAILURE);
         }
 
+        int num_bytes = 0;
         for(uint16_t i = 0; i < nfds; i++ )
         {
             COM_Ports_Handle_t* COM_Ports_Active = (COM_Ports_Handle_t*)events[i].data.ptr;
 
+            ReadDataState_t KindOfHead;
             if(events[i].events & EPOLLIN){
+                KindOfHead = Read_Head_Frame(COM_Ports_Active, &DumpData_Rx);
 
-                int num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx.head_frames, sizeof(DumpData_Rx.head_frames));
-                if(num_bytes == -1){
-                    error_label:
-                    perror("Ошибка функции read(): не прочитала файл\n"); 
-                    continue;
-                }else if(num_bytes == 0){
-                    printf("Устройство %s отключено после чтения head\n", COM_Ports_Active->path_ttyACM);
+                if( KindOfHead == READ_HEAD_DUMP ){
+                    if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
+                    {
+                        num_bytes = Read_Data_Dump(COM_Ports_Active, &DumpData_Rx);
+                        if(num_bytes <= 0){
+                            goto err_mkt;
+                        }
+                        if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
+                            goto err_mkt;
+                        }
+                    }
+                }else if( KindOfHead == READ_HEAD_AVE ){
+                    if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
+                    {
+                        usleep(1000); //TODO
+                    }
+                }else{
+                    err_mkt:
+                    printf("Устройство %s не прочитало head\n", COM_Ports_Active->path_ttyACM);
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
                     close(COM_Ports_Active->File_Descriptor);
                     continue;
                 }
-                num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx.count_elements, sizeof(DumpData_Rx.count_elements));
-                if(num_bytes == - 1) goto error_label;
 
-
-                if(DumpData_Rx.head_frames != ID_DUMP_FRAME_START){
-                    printf("Ошибка прёма данных: неверный ID head frame\n");
-                }else if(DumpData_Rx.head_frames == ID_DUMP_FRAME_START){
-
-                    if(DumpData_Rx.count_elements < 1){
-                        printf("Ошибка прёма данных: слишком маленькое колличество ожидаемых данных\n");
-                    }else if(DumpData_Rx.count_elements >= 1){
-                        printf("Успешный приём head сообщания и начало ожидание приёма данных\n");
-                        printf("Ожидаемое колличество принемаемых frame-ов %u - байт %u\n", DumpData_Rx.count_elements, DumpData_Rx.count_elements * sizeof(ModulData_t));
-                        if(USB_Read_COM(COM_Ports_Active, DumpData_Rx.buffer, DumpData_Rx.count_elements * sizeof(ModulData_t), 10000) != USB_OK){
-                            printf("Устройство %s отключено после тчения data\n", COM_Ports_Active->path_ttyACM);
-                            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
-                            close(COM_Ports_Active->File_Descriptor);
-                            continue;
-                        }
-
-                        num_bytes = read(COM_Ports_Active->File_Descriptor, &DumpData_Rx.tail_frames, sizeof(DumpData_Rx.tail_frames));
-                        if(num_bytes == -1) goto error_label;
                         
-                        if(DumpData_Rx.tail_frames == ID_TAIL_FRMES){
-                            for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
-                                Queue_Push(&Queue_Dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
-                            }
-                        }
+                if(DumpData_Rx.tail_frames == ID_TAIL_FRMES){
+                    printf("Устройство %s передало правильный tail\n", COM_Ports_Active->path_ttyACM);
+                    for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
+                        Queue_Push(&Queue_Dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
                     }
-
                 }
-            }
+            }  
         }
+        
     }
     free(DumpData_Rx.buffer);
     return 0;
 }
 
-
+/// @brief Поток вывода в консоль информации 
+/// @param arg - NULL
+/// @return - NON RETURN    
 void* thread_display(void* arg)
 {
     ModulData_t* ModulData_print = (ModulData_t*)calloc( NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t) );
@@ -247,21 +244,39 @@ void* thread_display(void* arg)
     while(1)
     {
 
-        int count_data = Queue_Pop(&Queue_Dump, ModulData_print, Queue_Dump.count, QUEUE_WAIT_STATE);
-        printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_Dump.count, Queue_Dump.head, Queue_Dump.tail);
-        if(count_data < 0){
-            printf("Ошибка чтения из кольцевого буфера\n");
-        }else{
-            for(uint32_t i = 0; i < count_data; i++ )
-            {
-                if(ModulData_print[i].packet.alarms.raw != 0){
-                    logger_print_one_frame(&ModulData_print[i], i);
-                }
-            }
-        }
+        // int count_data = Queue_Pop(&Queue_Dump, ModulData_print, 10, QUEUE_WAIT_STATE);
+        // printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_Dump.count, Queue_Dump.head, Queue_Dump.tail);
+        // if(count_data < 0){
+        //     printf("Ошибка чтения из кольцевого буфера\n");
+        // }else{
+        //     for(uint32_t i = 0; i < count_data; i++ )
+        //     {
+        //         if(ModulData_print[i].packet.alarms.raw != 0){
+        //             logger_print_one_frame(&ModulData_print[i], i);
+        //         }
+        //     }
+        // }
 
     }
 }
+
+
+void* thread_filesystem(void* arg)
+{
+    COM_Ports_Handle_t *COM_Ports_Device = Thread_CDC_Device.COM_Ports_Handle;
+    while(1)
+    {
+        ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+        int total_elements = Queue_Dump.count;
+        int count_data = sizeof(ModulData_t) * Queue_Pop(&Queue_Dump, DataFrameBuff, 10, QUEUE_WAIT_STATE);
+        char* FileFormatBuff = (char*)calloc( 1024 * 1024 * 3, sizeof(uint8_t));
+        FormatFrameInString(FileFormatBuff, 1024 * 1024 * 3, DataFrameBuff, 10, "/ttyACM0");
+        fprintf(stdout,FileFormatBuff);
+        usleep(1000000);
+    }
+
+}
+
 
 
 

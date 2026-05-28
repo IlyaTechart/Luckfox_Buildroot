@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 199309L
 #include "usb_com.h"
 #include <time.h>
-#include "frames_structure.h"
+
 
 COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
 
@@ -55,8 +55,13 @@ uint32_t USB_Com_Init(COM_Ports_Handle_t* COM_Port)
     return 0;
 
 }
-
-USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes, uint32_t Timeout)
+/// @brief Основная функция чтания данных из COM порта 
+/// @param COMPort Структура на читаемое устройсвто 
+/// @param buffer Указатель на буфер куда будут записаны данные с читаемого устройства 
+/// @param size_bytes Колличесвто байт 
+/// @param Timeout Тайм-аут для выхода из функции 
+/// @return Колличесвто прочитаных БАЙТ из COM порта 
+int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes, uint32_t Timeout)
 {
     int num_bytes_rx = 0;
     uint32_t count_bytse = 0;
@@ -76,7 +81,6 @@ USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t siz
                 
                 if (elapsed_ms >= Timeout) {
                     printf("Тайм-аут при чтении из %s\n", COMPort->path_ttyACM);
-                    printf("Общее колличество принятых данных: %d Байт %u.%u элементов\n", count_bytse, count_bytse / sizeof(ModulData_t), count_bytse % sizeof(ModulData_t));
                     return USB_TIMEOUT;
                 }
                 usleep(1000); 
@@ -93,11 +97,7 @@ USB_State_t USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t siz
         }
 
     }
-
-   printf("Общее колличество принятых полезных данных: %d Байт %u.%u элементов\n", count_bytse, count_bytse / sizeof(ModulData_t), count_bytse % sizeof(ModulData_t));
-
-
-    return USB_OK;
+    return count_bytse;
 }
 
 
@@ -105,6 +105,102 @@ void USB_Com_DeInit(int File_Descriptor, uint8_t NumberDevice)
 {
     close(File_Descriptor);
 }
+
+
+ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+{
+    // int num_bytes = read(COMPort->File_Descriptor, &DumpData_Rx->head_frames, sizeof(DumpData_Rx->head_frames));
+    // if(num_bytes == -1){
+    //     error_label:
+    //     perror("Ошибка функции read(): не прочитала файл\n"); 
+    //     return READ_ERROR;
+    // }else if(num_bytes == 0){
+    //     printf("Устройство %s отключено после чтения head\n", COMPort->path_ttyACM);
+    //     epoll_ctl(epoll, EPOLL_CTL_DEL, COMPort->File_Descriptor, NULL);
+    //     close(COMPort->File_Descriptor);
+    //     return READ_ERROR;
+    // }
+    if(USB_Read_COM(COMPort, &DumpData_Rx->head_frames, sizeof(DumpData_Rx->head_frames), 100) != sizeof(DumpData_Rx->head_frames)){
+        tcflush(COMPort->File_Descriptor, TCIFLUSH);
+        return READ_ERROR;
+    }
+    
+    if(DumpData_Rx->head_frames == ID_DUMP_FRAME_START)
+    {
+        return READ_HEAD_DUMP;
+    }
+
+    if(DumpData_Rx->head_frames == ID_AVE_FRAME_START)
+    {
+        return READ_HEAD_AVE;
+    }
+
+    tcflush(COMPort->File_Descriptor, TCIFLUSH);
+    return READ_NONE;
+}
+
+
+int Read_Count_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+{
+    // int num_bytes = read(COMPort->File_Descriptor, &DumpData_Rx->count_elements, sizeof(DumpData_Rx->count_elements));
+
+    // if(num_bytes == -1){
+    //     error_label:
+    //     perror("Ошибка функции read(): не прочитала файл\n"); 
+    //     return -1;
+    // }else if(num_bytes == 0){
+    //     printf("Устройство %s отключено после чтения head\n", COMPort->path_ttyACM);
+    //     epoll_ctl(epoll, EPOLL_CTL_DEL, COMPort->File_Descriptor, NULL);
+    //     close(COMPort->File_Descriptor);
+    //     return -2;
+    // }
+
+    if(USB_Read_COM(COMPort, &DumpData_Rx->count_elements, sizeof(DumpData_Rx->count_elements), 100) != sizeof(DumpData_Rx->head_frames)) {
+        tcflush(COMPort->File_Descriptor, TCIFLUSH);
+        return -1; // Ошибка чтения
+    }
+    if(DumpData_Rx->count_elements < 1){
+        printf("Ошибка приёма данных: слишком маленькое количество ожидаемых данных\n");
+        return -1;
+    }
+    printf("Успешный приём head сообщения и начало ожидания приёма данных\n");
+    printf("Ожидаемое количество принимаемых frame-ов %u - байт %u\n", 
+           DumpData_Rx->count_elements, 
+           DumpData_Rx->count_elements * sizeof(ModulData_t));
+    
+    return DumpData_Rx->count_elements;
+}
+
+int Read_Data_Dump(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+{
+    int number_read_data = 0;
+    number_read_data = USB_Read_COM(COMPort, DumpData_Rx->buffer, DumpData_Rx->count_elements * sizeof(ModulData_t), 7000);
+    if( number_read_data < (DumpData_Rx->count_elements * sizeof(ModulData_t)) ) {
+        tcflush(COMPort->File_Descriptor, TCIFLUSH);
+        return -1; // Ошибка чтения
+    }
+    printf("Общее колличество принятых полезных данных: %d Байт %d.%d элементов\n", number_read_data, 
+                        number_read_data / sizeof(ModulData_t), number_read_data % sizeof(ModulData_t));
+
+    return number_read_data;
+}
+
+int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+{
+    if(USB_Read_COM(COMPort, &DumpData_Rx->tail_frames, sizeof(DumpData_Rx->tail_frames), 100) != sizeof(DumpData_Rx->head_frames)) {
+        tcflush(COMPort->File_Descriptor, TCIFLUSH);
+        return -1; // Ошибка чтения
+    }
+
+    if(DumpData_Rx->tail_frames != ID_TAIL_FRMES)
+    {
+        printf("Ошибка чтения tail сообщения");
+        return -2;
+    }
+
+    return 0;
+}
+
 
 
 
