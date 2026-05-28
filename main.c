@@ -65,16 +65,14 @@ int Get_Discription_Connected_Devices(void)
         }
         // Т.к. сейчас мы делаем функционал только для ОДНОГО устройства,
         // берём первое найденное (с индексом 0) и копируем его путь
-        if (found_devices > 0) {
-            snprintf(
-                (char*)Thread_CDC_Device.COM_Ports_Handle[0].path_ttyACM, 
-                sizeof(Thread_CDC_Device.COM_Ports_Handle[0].path_ttyACM),
-                "%s", 
-                glob_result.gl_pathv[0]
-            );
-            
+        if(found_devices > 0){
+            for(uint8_t WriteDev = 0; WriteDev < found_devices; WriteDev++ ){
+                snprintf( (char*)Thread_CDC_Device.COM_Ports_Handle[WriteDev].path_ttyACM, 
+                sizeof(Thread_CDC_Device.COM_Ports_Handle[WriteDev].path_ttyACM), "%s", glob_result.gl_pathv[WriteDev]
+                );
+            }
             // Задаём количество устройств для инициализации потоков
-            Thread_CDC_Device.TotalNumberOfDevice = 1;
+            Thread_CDC_Device.TotalNumberOfDevice = found_devices;
         }
         
     } else if (return_value == GLOB_NOMATCH) {

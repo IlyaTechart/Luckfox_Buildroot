@@ -5,29 +5,35 @@
 
 
 
-void FormatFrameInString(char *FileBuffer, size_t buffer_size, ModulData_t *ModulDataMassive, uint32_t count_frame, char *NameDevice)
+int FormatFrameInString(char *FileBuffer, size_t buffer_size, ModulData_t *ModulDataMassive, uint32_t count_frame, char *NameDevice)
 {
     if (!FileBuffer || !ModulDataMassive || buffer_size == 0){
         printf("Нулевой указатель на буфер или нул. указ. на принем. данные или колличесвто элементов - 0\n");
-        return;
+        return 0;
     } 
 
     size_t offset = 0;
     
     // Пишем заголовок CSV (один раз)
     int written = snprintf(FileBuffer + offset, buffer_size - offset,
-        "Time_ms,"
+        "Name Device,""Time_ms,"
         "Grid_Status,Byp_Grid_Status,Rect_Status,Inv_Status,Pwr_via_Inv,Pwr_via_Byp,Sync_Status,Load_Mode,Sound_Alarm,Bat_Status,Ups_Mode,"
         "Err_LowIn,Err_HiDC,Err_LowBat,Err_NoBat,Err_InvF,Err_InvOC,Err_HiOut,Err_Fan,Err_ReplBat,Err_RectHot,Err_InvHot,"
         "V_in_AB,V_in_BC,V_in_CA,V_byp_A,V_byp_B,V_byp_C,I_in_A,I_in_B,I_in_C,Freq_in,"
         "V_out_A,V_out_B,V_out_C,Freq_out,I_out_A,I_out_B,I_out_C,P_act_A,P_act_B,P_act_C,P_app_A,P_app_B,P_app_C,Load_A,Load_B,Load_C,Event_Count,"
         "Vbat,Bat_Cap,Bat_Groups,DC_bus,Bat_Current,Backup_time,CRC32\n"
     );
+
+    if(written < 0){
+        perror("Ошибка: snprintf не отработал в FormatFrameInString");
+        return 0;
+    }
     
     if (written > 0 && written < (int)(buffer_size - offset)) {
         offset += written;
     } else {
-        return; // Буфер слишком мал даже для заголовка
+        printf("Буфер слишком мал даже для загаловка\n");
+        return 0; // Буфер слишком мал даже для заголовка
     }
 
     for (uint32_t i = 0; i < count_frame; i++) {
@@ -37,14 +43,14 @@ void FormatFrameInString(char *FileBuffer, size_t buffer_size, ModulData_t *Modu
         int16_t bat_current_signed = (int16_t)pkt->battery.bat_current;
         
         written = snprintf(FileBuffer + offset, buffer_size - offset,
-            "%u,"
+            "%s""%u,"
             "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u," // Status (11)
             "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u," // Alarms (11)
             "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"    // Input (10)
             "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u," // Output (17)
             "%u,%u,%u,%u,%d,%u,0x%08X\n",       // Battery (6) + CRC (1)
             
-            pkt->system_time_ms,
+            NameDevice, pkt->system_time_ms,
             
             pkt->status.grid_status, pkt->status.bypass_grid_status, pkt->status.rectifier_status, pkt->status.inverter_status, pkt->status.pwr_via_inverter, pkt->status.pwr_via_bypass, pkt->status.sync_status, pkt->status.load_mode, pkt->status.sound_alarm, pkt->status.battery_status, pkt->status.ups_mode,
             
@@ -62,9 +68,53 @@ void FormatFrameInString(char *FileBuffer, size_t buffer_size, ModulData_t *Modu
         if (written > 0 && written < (int)(buffer_size - offset)) {
             offset += written;
         } else {
-            printf("Буфер слишком мал чтобы записать все кадры\n");// Буфер заполнен, прекращаем запись
-            return; 
+            printf("Буфер мал чтобы записать все кадры\n");// Буфер заполнен, прекращаем запись
+            return offset; 
         }
     }
-    printf("Успешно отформатированные данные были записаны в буфер\n");
+    if(offset > 0)
+    {
+        printf("Успешно отформатированные данные были записаны в буфер: %u байт\n", offset);
+        return (int)offset;
+    }
+
+    return 0;
+}
+
+int Get_Descriptor_File_Open(char* pathFILE)
+{
+    int fd = open(pathFILE, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+
+    if(fd == -1){
+        perror("Файл не открался/не создался\n");
+    }
+
+    return fd;
+}
+
+
+FILE_enm_type_t File_Wirite(char *buffer, uint32_t count, char* pathFILE)
+{
+    ssize_t writen_byte = 0;
+
+    if(count <= 0){
+        return FILE_WRONG_ARGUMENT;
+    }
+
+    int fd = Get_Descriptor_File_Open(pathFILE);
+
+    if(fd == -1){
+        return FILE_NO_OPEN;
+    }
+
+    writen_byte = write(fd, buffer, count);
+
+    if(writen_byte < count)
+    {
+        return FILE_NOT_WRITE;
+    }
+
+    close(fd);
+
+    return FILE_WRITE;
 }

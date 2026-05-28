@@ -136,10 +136,12 @@ void* thread_cdc_generic(void* arg)
     Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
     uint32_t ret = 0;
 
-    ret = USB_Com_Init(&Thread_CDC_Device->COM_Ports_Handle[0]);
-    if(ret != 0){
-        perror("Ошибка: USB_Com_Init - не инициализировался успешно");
-        exit(EXIT_FAILURE);
+    for(uint8_t i = 0; i < Thread_CDC_Device->TotalNumberOfDevice; i++){
+        ret = USB_Com_Init(&Thread_CDC_Device->COM_Ports_Handle[i]);
+        if(ret != 0){
+            perror("Ошибка: USB_Com_Init - не инициализировался успешно");//TODO
+            exit(EXIT_FAILURE);
+        }
     }
 
     int epoll_fd = epoll_create1(0);
@@ -199,10 +201,10 @@ void* thread_cdc_generic(void* arg)
                     {
                         num_bytes = Read_Data_Dump(COM_Ports_Active, &DumpData_Rx);
                         if(num_bytes <= 0){
-                            goto err_mkt;
+                            goto err_mrk;
                         }
                         if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
-                            goto err_mkt;
+                            goto err_mrk;
                         }
                     }
                 }else if( KindOfHead == READ_HEAD_AVE ){
@@ -211,14 +213,13 @@ void* thread_cdc_generic(void* arg)
                         usleep(1000); //TODO
                     }
                 }else{
-                    err_mkt:
-                    printf("Устройство %s не прочитало head\n", COM_Ports_Active->path_ttyACM);
+                    err_mrk:
+                    printf("Устройство %s не прочитало head и было удаленоиз epoll\n", COM_Ports_Active->path_ttyACM);
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
                     close(COM_Ports_Active->File_Descriptor);
                     continue;
                 }
 
-                        
                 if(DumpData_Rx.tail_frames == ID_TAIL_FRMES){
                     printf("Устройство %s передало правильный tail\n", COM_Ports_Active->path_ttyACM);
                     for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
@@ -264,15 +265,43 @@ void* thread_display(void* arg)
 void* thread_filesystem(void* arg)
 {
     COM_Ports_Handle_t *COM_Ports_Device = Thread_CDC_Device.COM_Ports_Handle;
+
     while(1)
     {
         ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
-        int total_elements = Queue_Dump.count;
-        int count_data = sizeof(ModulData_t) * Queue_Pop(&Queue_Dump, DataFrameBuff, 10, QUEUE_WAIT_STATE);
-        char* FileFormatBuff = (char*)calloc( 1024 * 1024 * 3, sizeof(uint8_t));
-        FormatFrameInString(FileFormatBuff, 1024 * 1024 * 3, DataFrameBuff, 10, "/ttyACM0");
-        fprintf(stdout,FileFormatBuff);
-        usleep(1000000);
+        int popped_elements = Queue_Pop(&Queue_Dump, DataFrameBuff, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+
+        if(popped_elements > 0)
+        {
+            size_t csv_buffer_size = (popped_elements * 300) + 500;
+            char* FileFormatBuff = (char*)calloc(csv_buffer_size, sizeof(char));
+            int written_bytes = FormatFrameInString(FileFormatBuff, csv_buffer_size, DataFrameBuff, popped_elements, "/ttyACM0");
+
+            if(written_bytes > 0){
+                if (File_Wirite(FileFormatBuff, (uint32_t)written_bytes, "/userdata/dumps_log/LogTtyACM0") != FILE_WRITE) {
+                    printf("Ошибка записи файла!\n");
+                } else {
+                    printf("Успешно записано %d байт в CSV файл.\n", written_bytes);
+                }
+            }
+            free(FileFormatBuff);
+        }
+        free(DataFrameBuff);
+        const char* remote_file  = "q@172.18.147.195:/home/q/ttyACM0.csv";
+        const char* local_path  = "/userdata/dumps_log/LogTtyACM0";
+        char scp_buffer[256];
+        snprintf(scp_buffer, sizeof(scp_buffer),"scp %s %s", local_path, remote_file);
+        printf("Выполняется: %s\n", scp_buffer);
+        int ret = system(scp_buffer);
+        if (ret == 0) {
+            printf("Файл успешно скопирован.\n");
+        } else {
+            printf("Ошибка scp, код возврата: %d\n", ret);
+        // system() возвращает статус оболочки; для детального анализа используйте WEXITSTATUS(ret)
+        }
+
+        usleep(10000); 
+
     }
 
 }
