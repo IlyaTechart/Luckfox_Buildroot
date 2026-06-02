@@ -14,7 +14,7 @@
 
 // Глобальные макросы пользовательской программы 
 #define SUPPORT_NUMBER_DEVICE_USB 24
-#define NUMBER_ELLEMENTS_RECESIVE 5000
+#define NUMBER_ELLEMENTS_RECESIVE 2000
 
 
 

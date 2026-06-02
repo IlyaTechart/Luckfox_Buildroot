@@ -287,7 +287,7 @@ void* thread_filesystem(void* arg)
             free(FileFormatBuff);
         }
         free(DataFrameBuff);
-        const char* remote_file  = "q@172.18.147.195:/home/q/ttyACM0.csv";
+        const char* remote_file  = "ilya73@192.168.1.107:/home/ilya73/ttyACM0.csv";
         const char* local_path  = "/userdata/dumps_log/LogTtyACM0";
         char scp_buffer[256];
         snprintf(scp_buffer, sizeof(scp_buffer),"scp %s %s", local_path, remote_file);

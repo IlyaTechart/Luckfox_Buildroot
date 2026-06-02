@@ -124,10 +124,40 @@ int main(int argc, char * argv[])
     printf("Поток вывода информации созадн\n");
 
 
+    const char *green = "\033[32m";  // зелёный текст
+    const char *white = "\033[37m";  // белый текст
+    const char *blue = "\033[35m";  // белый текст
+    const char *reset = "\033[0m";   // сброс всех атрибутов
+
+    const char *setcursor = "\x1b[s"; // Сохранить текущую позицию курсора
+    const char *restorecursor = "\x1b[u"; // Восстановить сохраненную позицию курсора
+    const char *setcornercursor = "\x1b[H"; // Переместить курсор в левый верхний угол (1,1)
+  
+    const char *clearsring = "\x1b[2K"; // Очистить всю строку, где находится курсор
+
+
+
+    sleep(2);
+    char down_dispay[30];
+    memset(down_dispay,'\n', sizeof(down_dispay));
+    printf("%s", down_dispay);
+    printf("%s", setcornercursor);
+    printf("%s", blue);
+    printf("%s", setcursor);
+    printf("%s", clearsring);
     while(1)
     {
 
-        usleep(1000000);
+        printf("========================================================================\n");
+        printf("                             Главное меню                               \n");
+        printf("========================================================================\n");
+        printf("\n");
+        printf("1) Показать поток данных\n");
+        printf("2) Зайти в меню дампа\n");
+
+        printf("%s", restorecursor);
+
+        sleep(2);
 
     }
     printf("Программа завершилась\n");

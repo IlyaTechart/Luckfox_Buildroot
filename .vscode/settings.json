@@ -1,5 +1,5 @@
 {
-    "luckfox.ip": "169.254.68.111",
+    "luckfox.ip": "192.168.1.135",
     "cmake.configureArgs": [
         "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/toolchain.cmake",
         "-DCMAKE_BUILD_TYPE=Debug"
