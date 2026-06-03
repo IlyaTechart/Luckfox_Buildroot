@@ -46,7 +46,7 @@ COM_Ports_Handle_t COM_Ports_Handle[24];
 
 uint32_t USB_Com_Init(COM_Ports_Handle_t* COM_Port);
 int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size, uint32_t Timeout);
-ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
+ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head);
 int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
 int Read_Data_Dump(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
 int Read_AVE_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);

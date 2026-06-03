@@ -91,7 +91,7 @@ int Get_Discription_Connected_Devices(void)
 
 int main(int argc, char * argv[])
 {
-    setvbuf(stdout, NULL, _IONBF, 0);// Отключение буферизации вывода в терминал. 
+        setvbuf(stdout, NULL, _IONBF, 0);// Отключение буферизации вывода в терминал. 
 
     Thread_CDC_Device.COM_Ports_Handle = COM_Ports_Handle;
     int devices_count = Get_Discription_Connected_Devices();

@@ -9,7 +9,10 @@
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
-Queue_Handle_t Queue_Dump;
+Queue_Handle_t Queue;
+
+/// @brief Для режимов работы thread_display 
+Print_Mode_t Print_Mode = SHOW_NONE;
 
 
 /// @brief Инициализацияя очереди, передающей между потоками дамп 
@@ -167,11 +170,11 @@ void* thread_cdc_generic(void* arg)
 
     struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
 
-    Queue_Init(&Queue_Dump, NUMBER_ELLEMENTS_RECESIVE);
+    Queue_Init(&Queue, TAKE_HEAP_MEMORY_FOR_ELEMENTS);
 
     Package_t DumpData_Rx = {0};
     Package_t AVE_Data_Rx = {0};
-    DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+    DumpData_Rx.buffer = (ModulData_t*)calloc(TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t));
     AVE_Data_Rx.buffer = (ModulData_t*)calloc( 1 , sizeof(ModulData_t));
 
     printf("Вход в поток приёма данных\n");
@@ -196,7 +199,8 @@ void* thread_cdc_generic(void* arg)
 
             ReadDataState_t KindOfHead;
             if(events[i].events & EPOLLIN){
-                KindOfHead = Read_Head_Frame(COM_Ports_Active, &DumpData_Rx);
+                uint32_t Head_Frame = 0;
+                KindOfHead = Read_Head_Frame(COM_Ports_Active, &Head_Frame);
 
                 if( KindOfHead == READ_HEAD_DUMP ){
                     if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
@@ -210,13 +214,13 @@ void* thread_cdc_generic(void* arg)
                         }
                     }
                 }else if( KindOfHead == READ_HEAD_AVE ){
-                    if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
+                    if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
                     {
-                        num_bytes = Read_AVE_Frame(COM_Ports_Active, &DumpData_Rx);
+                        num_bytes = Read_AVE_Frame(COM_Ports_Active, &AVE_Data_Rx);
                         if(num_bytes <= 0){
                             goto err_mrk;
                         }
-                        if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
+                        if(Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0){
                             goto err_mrk;
                         }
                     }
@@ -228,10 +232,19 @@ void* thread_cdc_generic(void* arg)
                     continue;
                 }
 
+                if(AVE_Data_Rx.tail_frames = ID_TAIL_FRMES)
+                {
+                    Print_Mode = SHOW_AVE_MODE;
+                    Queue_Push(&Queue, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
+                    
+                }
+
+
                 if(DumpData_Rx.tail_frames == ID_TAIL_FRMES){
                     printf("Устройство %s передало правильный tail\n", COM_Ports_Active->path_ttyACM);
                     for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
-                        Queue_Push(&Queue_Dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
+                        Print_Mode = SHOW_DUMP_MODE;
+                        Queue_Push(&Queue, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
                     }
                 }
             }  
@@ -247,24 +260,53 @@ void* thread_cdc_generic(void* arg)
 /// @return - NON RETURN    
 void* thread_display(void* arg)
 {
-    ModulData_t* ModulData_print = (ModulData_t*)calloc( NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t) );
+    ModulData_t* ModulDatPrintDump = (ModulData_t*)calloc( TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t) );
+
+    
+
 
     printf("Вход в поток вывода информации\n");
     while(1)
     {
+        
+        
+        uint32_t index_count = 0;
+        ModulData_t ModulDataPrintAVE;
+        switch (Print_Mode)
+        {
+        case SHOW_AVE_MODE:{
 
-        // int count_data = Queue_Pop(&Queue_Dump, ModulData_print, 10, QUEUE_WAIT_STATE);
-        // printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_Dump.count, Queue_Dump.head, Queue_Dump.tail);
-        // if(count_data < 0){
-        //     printf("Ошибка чтения из кольцевого буфера\n");
-        // }else{
-        //     for(uint32_t i = 0; i < count_data; i++ )
-        //     {
-        //         if(ModulData_print[i].packet.alarms.raw != 0){
-        //             logger_print_one_frame(&ModulData_print[i], i);
-        //         }
-        //     }
-        // }
+            int count_data = Queue_Pop(&Queue, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
+            logger_print_one_frame(&ModulDataPrintAVE, index_count);
+            if (index_count < UINT32_MAX) {
+                index_count++;
+            } else {
+                index_count = 0;
+            }
+
+            Print_Mode = SHOW_NONE;
+            break;
+        }
+        
+        case SHOW_DUMP_MODE:{
+
+            int count_data = Queue_Pop(&Queue, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+            printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue.count, Queue.head, Queue.tail);
+            for(uint32_t i = 0; i < count_data; i++)
+            {
+                if(ModulDatPrintDump->packet.alarms.raw != 0){
+                    logger_print_one_frame(&ModulDataPrintAVE, i);
+                }
+            }
+            Print_Mode = SHOW_NONE;
+            break;
+
+        }
+            
+        default:
+        sleep(2);
+            break;
+        }
 
     }
 }
@@ -277,7 +319,7 @@ void* thread_filesystem(void* arg)
     while(1)
     {
         ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
-        int popped_elements = Queue_Pop(&Queue_Dump, DataFrameBuff, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+        int popped_elements = Queue_Pop(&Queue, DataFrameBuff, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
 
         if(popped_elements > 0)
         {

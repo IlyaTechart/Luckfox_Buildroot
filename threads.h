@@ -15,6 +15,7 @@
 // Глобальные макросы пользовательской программы 
 #define SUPPORT_NUMBER_DEVICE_USB 24
 #define NUMBER_ELLEMENTS_RECESIVE 2000
+#define TAKE_HEAP_MEMORY_FOR_ELEMENTS 10000
 
 
 
@@ -23,6 +24,15 @@ typedef enum{
     QUEUE_WAIT_STATE
 }Queue_state_t;
 
+
+typedef enum{
+    SHOW_NONE = -1,
+    SHOW_AVE_MODE,
+    SHOW_DUMP_MODE
+}Print_Mode_t;
+
+
+/// @brief Структура очереди  
 typedef struct{
     ModulData_t *data;
     int head; // Индекс записи (указывает на +1 к текущем записанным данным)
@@ -50,7 +60,7 @@ typedef struct
 Thread_CDC_Device_t Thread_CDC_Device;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
-extern Queue_Handle_t Queue_Dump;
+extern Queue_Handle_t Queue;
 
 
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
