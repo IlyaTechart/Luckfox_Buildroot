@@ -9,8 +9,10 @@
 Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
-Queue_Handle_t Queue;
 
+
+Queue_Handle_t Queue_dump;
+Queue_Handle_t Queue_ave;
 /// @brief Для режимов работы thread_display 
 Print_Mode_t Print_Mode = SHOW_NONE;
 
@@ -170,16 +172,17 @@ void* thread_cdc_generic(void* arg)
 
     struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
 
-    Queue_Init(&Queue, TAKE_HEAP_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_dump, TAKE_HEAP_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_ave, 1);
 
     Package_t DumpData_Rx = {0};
     Package_t AVE_Data_Rx = {0};
-    DumpData_Rx.buffer = (ModulData_t*)calloc(TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t));
-    AVE_Data_Rx.buffer = (ModulData_t*)calloc( 1 , sizeof(ModulData_t));
 
     printf("Вход в поток приёма данных\n");
     while(1)
     {
+        DumpData_Rx.buffer = (ModulData_t*)calloc(TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t));
+        AVE_Data_Rx.buffer = (ModulData_t*)calloc( 1 , sizeof(ModulData_t));
         int nfds = epoll_wait(epoll_fd, events, SUPPORT_NUMBER_DEVICE_USB, -1);
         if (nfds == -1) {
             if (errno == EINTR) {
@@ -235,7 +238,7 @@ void* thread_cdc_generic(void* arg)
                 if(AVE_Data_Rx.tail_frames = ID_TAIL_FRMES)
                 {
                     Print_Mode = SHOW_AVE_MODE;
-                    Queue_Push(&Queue, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
+                    Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
                     
                 }
 
@@ -244,14 +247,20 @@ void* thread_cdc_generic(void* arg)
                     printf("Устройство %s передало правильный tail\n", COM_Ports_Active->path_ttyACM);
                     for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
                         Print_Mode = SHOW_DUMP_MODE;
-                        Queue_Push(&Queue, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
+                        Queue_Push(&Queue_dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
                     }
+                
                 }
             }  
         }
-        
+        free(DumpData_Rx.buffer);  
+        free(AVE_Data_Rx.buffer);
+        memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
+        memset(&AVE_Data_Rx, 0x00, sizeof(AVE_Data_Rx));
     }
-    free(DumpData_Rx.buffer);
+
+    free(DumpData_Rx.buffer);  
+    free(AVE_Data_Rx.buffer);
     return 0;
 }
 
@@ -264,19 +273,22 @@ void* thread_display(void* arg)
 
     
 
-
+    uint32_t index_count = 0;
     printf("Вход в поток вывода информации\n");
     while(1)
     {
         
         
-        uint32_t index_count = 0;
         ModulData_t ModulDataPrintAVE;
         switch (Print_Mode)
         {
+        case SHOW_NONE:{
+            usleep(100000);
+            break;
+        }
         case SHOW_AVE_MODE:{
 
-            int count_data = Queue_Pop(&Queue, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
+            int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
             logger_print_one_frame(&ModulDataPrintAVE, index_count);
             if (index_count < UINT32_MAX) {
                 index_count++;
@@ -290,11 +302,11 @@ void* thread_display(void* arg)
         
         case SHOW_DUMP_MODE:{
 
-            int count_data = Queue_Pop(&Queue, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
-            printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue.count, Queue.head, Queue.tail);
+            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+            printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
             for(uint32_t i = 0; i < count_data; i++)
             {
-                if(ModulDatPrintDump->packet.alarms.raw != 0){
+                if(ModulDatPrintDump[i].packet.alarms.raw != 0){
                     logger_print_one_frame(&ModulDataPrintAVE, i);
                 }
             }
@@ -319,7 +331,7 @@ void* thread_filesystem(void* arg)
     while(1)
     {
         ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
-        int popped_elements = Queue_Pop(&Queue, DataFrameBuff, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+        int popped_elements = Queue_Pop(&Queue_dump, DataFrameBuff, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
 
         if(popped_elements > 0)
         {
@@ -337,19 +349,19 @@ void* thread_filesystem(void* arg)
             free(FileFormatBuff);
         }
         free(DataFrameBuff);
-        //const char* remote_file  = "ilya73@192.168.1.107:/home/ilya73/ttyACM0.csv";
-        const char* remote_file  = "q@172.18.147.195:/home/q/ttyACM0.csv";
-        const char* local_path  = "/userdata/dumps_log/LogTtyACM0";
-        char scp_buffer[256];
-        snprintf(scp_buffer, sizeof(scp_buffer),"scp %s %s", local_path, remote_file);
-        printf("Выполняется: %s\n", scp_buffer);
-        int ret = system(scp_buffer);
-        if (ret == 0) {
-            printf("Файл успешно скопирован.\n");
-        } else {
-            printf("Ошибка scp, код возврата: %d\n", ret);
-        // system() возвращает статус оболочки; для детального анализа используйте WEXITSTATUS(ret)
-        }
+        // //const char* remote_file  = "ilya73@192.168.1.107:/home/ilya73/ttyACM0.csv";
+        // const char* remote_file  = "q@172.18.147.195:/home/q/ttyACM0.csv";
+        // const char* local_path  = "/userdata/dumps_log/LogTtyACM0";
+        // char scp_buffer[256];
+        // snprintf(scp_buffer, sizeof(scp_buffer),"scp %s %s", local_path, remote_file);
+        // printf("Выполняется: %s\n", scp_buffer);
+        // int ret = system(scp_buffer);
+        // if (ret == 0) {
+        //     printf("Файл успешно скопирован.\n");
+        // } else {
+        //     printf("Ошибка scp, код возврата: %d\n", ret);
+        // // system() возвращает статус оболочки; для детального анализа используйте WEXITSTATUS(ret)
+        // }
 
         usleep(10000); 
 

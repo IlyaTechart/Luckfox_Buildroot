@@ -81,6 +81,9 @@ int FormatFrameInString(char *FileBuffer, size_t buffer_size, ModulData_t *Modul
     return 0;
 }
 
+/// @brief Взятие дискриптора для записи файла O_CREAT - создаёт файл, O_WRONLY - только запись, O_TRUNC - стирает предыдущие данные 
+/// @param pathFILE Путь файла 
+/// @return Возвращает дискриптор 
 int Get_Descriptor_File_Open(char* pathFILE)
 {
     int fd = open(pathFILE, O_CREAT | O_WRONLY | O_TRUNC, 0666);
@@ -92,7 +95,11 @@ int Get_Descriptor_File_Open(char* pathFILE)
     return fd;
 }
 
-
+/// @brief 
+/// @param buffer 
+/// @param count 
+/// @param pathFILE 
+/// @return 
 FILE_enm_type_t File_Wirite(char *buffer, uint32_t count, char* pathFILE)
 {
     ssize_t writen_byte = 0;
