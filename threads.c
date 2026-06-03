@@ -169,8 +169,10 @@ void* thread_cdc_generic(void* arg)
 
     Queue_Init(&Queue_Dump, NUMBER_ELLEMENTS_RECESIVE);
 
-    DumpData_t DumpData_Rx = {0};
+    Package_t DumpData_Rx = {0};
+    Package_t AVE_Data_Rx = {0};
     DumpData_Rx.buffer = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
+    AVE_Data_Rx.buffer = (ModulData_t*)calloc( 1 , sizeof(ModulData_t));
 
     printf("Вход в поток приёма данных\n");
     while(1)
@@ -210,7 +212,13 @@ void* thread_cdc_generic(void* arg)
                 }else if( KindOfHead == READ_HEAD_AVE ){
                     if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
                     {
-                        usleep(1000); //TODO
+                        num_bytes = Read_AVE_Frame(COM_Ports_Active, &DumpData_Rx);
+                        if(num_bytes <= 0){
+                            goto err_mrk;
+                        }
+                        if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
+                            goto err_mrk;
+                        }
                     }
                 }else{
                     err_mrk:
@@ -287,7 +295,8 @@ void* thread_filesystem(void* arg)
             free(FileFormatBuff);
         }
         free(DataFrameBuff);
-        const char* remote_file  = "ilya73@192.168.1.107:/home/ilya73/ttyACM0.csv";
+        //const char* remote_file  = "ilya73@192.168.1.107:/home/ilya73/ttyACM0.csv";
+        const char* remote_file  = "q@172.18.147.195:/home/q/ttyACM0.csv";
         const char* local_path  = "/userdata/dumps_log/LogTtyACM0";
         char scp_buffer[256];
         snprintf(scp_buffer, sizeof(scp_buffer),"scp %s %s", local_path, remote_file);

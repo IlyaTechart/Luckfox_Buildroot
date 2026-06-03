@@ -7,6 +7,9 @@
 COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
 
 
+/// @brief 
+/// @param COM_Port 
+/// @return 
 uint32_t USB_Com_Init(COM_Ports_Handle_t* COM_Port)
 {
 
@@ -106,20 +109,12 @@ void USB_Com_DeInit(int File_Descriptor, uint8_t NumberDevice)
     close(File_Descriptor);
 }
 
-
-ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+/// @brief 
+/// @param COMPort 
+/// @param DumpData_Rx 
+/// @return 
+ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
 {
-    // int num_bytes = read(COMPort->File_Descriptor, &DumpData_Rx->head_frames, sizeof(DumpData_Rx->head_frames));
-    // if(num_bytes == -1){
-    //     error_label:
-    //     perror("Ошибка функции read(): не прочитала файл\n"); 
-    //     return READ_ERROR;
-    // }else if(num_bytes == 0){
-    //     printf("Устройство %s отключено после чтения head\n", COMPort->path_ttyACM);
-    //     epoll_ctl(epoll, EPOLL_CTL_DEL, COMPort->File_Descriptor, NULL);
-    //     close(COMPort->File_Descriptor);
-    //     return READ_ERROR;
-    // }
     if(USB_Read_COM(COMPort, &DumpData_Rx->head_frames, sizeof(DumpData_Rx->head_frames), 100) != sizeof(DumpData_Rx->head_frames)){
         tcflush(COMPort->File_Descriptor, TCIFLUSH);
         return READ_ERROR;
@@ -139,22 +134,12 @@ ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpDat
     return READ_NONE;
 }
 
-
-int Read_Count_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+/// @brief 
+/// @param COMPort 
+/// @param DumpData_Rx 
+/// @return 
+int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
 {
-    // int num_bytes = read(COMPort->File_Descriptor, &DumpData_Rx->count_elements, sizeof(DumpData_Rx->count_elements));
-
-    // if(num_bytes == -1){
-    //     error_label:
-    //     perror("Ошибка функции read(): не прочитала файл\n"); 
-    //     return -1;
-    // }else if(num_bytes == 0){
-    //     printf("Устройство %s отключено после чтения head\n", COMPort->path_ttyACM);
-    //     epoll_ctl(epoll, EPOLL_CTL_DEL, COMPort->File_Descriptor, NULL);
-    //     close(COMPort->File_Descriptor);
-    //     return -2;
-    // }
-
     if(USB_Read_COM(COMPort, &DumpData_Rx->count_elements, sizeof(DumpData_Rx->count_elements), 100) != sizeof(DumpData_Rx->head_frames)) {
         tcflush(COMPort->File_Descriptor, TCIFLUSH);
         return -1; // Ошибка чтения
@@ -171,7 +156,7 @@ int Read_Count_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
     return DumpData_Rx->count_elements;
 }
 
-int Read_Data_Dump(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+int Read_Data_Dump(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
 {
     int number_read_data = 0;
     number_read_data = USB_Read_COM(COMPort, DumpData_Rx->buffer, DumpData_Rx->count_elements * sizeof(ModulData_t), 7000);
@@ -185,7 +170,22 @@ int Read_Data_Dump(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
     return number_read_data;
 }
 
-int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, DumpData_t *DumpData_Rx)
+int Read_AVE_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
+{
+    int number_read_data = 0;
+    number_read_data = USB_Read_COM(COMPort, DumpData_Rx->buffer, DumpData_Rx->count_elements * sizeof(ModulData_t), 7000);
+    if( number_read_data < (DumpData_Rx->count_elements * sizeof(ModulData_t)) ) {
+        tcflush(COMPort->File_Descriptor, TCIFLUSH);
+        return -1; // Ошибка чтения
+    }
+    printf("Общее колличество принятых полезных данных: %d Байт %d.%d элементов\n", number_read_data, 
+                        number_read_data / sizeof(ModulData_t), number_read_data % sizeof(ModulData_t));
+
+    return number_read_data;
+
+}
+
+int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
 {
     if(USB_Read_COM(COMPort, &DumpData_Rx->tail_frames, sizeof(DumpData_Rx->tail_frames), 100) != sizeof(DumpData_Rx->head_frames)) {
         tcflush(COMPort->File_Descriptor, TCIFLUSH);

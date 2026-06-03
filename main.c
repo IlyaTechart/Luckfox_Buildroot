@@ -137,25 +137,33 @@ int main(int argc, char * argv[])
 
 
 
-    sleep(2);
-    char down_dispay[30];
-    memset(down_dispay,'\n', sizeof(down_dispay));
-    printf("%s", down_dispay);
-    printf("%s", setcornercursor);
-    printf("%s", blue);
-    printf("%s", setcursor);
-    printf("%s", clearsring);
+    // sleep(2);
+    // char down_dispay[30];
+    // memset(down_dispay,'\n', sizeof(down_dispay));
+    // printf("%s", down_dispay);
+    // printf("%s", setcornercursor);
+    // printf("%s", blue);
+    // printf("%s", setcursor);
+    // printf("%s", clearsring);
+
+
+    // int sumbol[4];
+    // sumbol[0] = getchar();
+    // sumbol[1] = getchar();
+    // sumbol[2] = getchar();
+    // sumbol[3] = getchar();
+    // printf("Первый %d, Второй %d, Третий %d, Четвёртый %d\n", sumbol[0], sumbol[1], sumbol[2], sumbol[3]);
     while(1)
     {
 
-        printf("========================================================================\n");
-        printf("                             Главное меню                               \n");
-        printf("========================================================================\n");
-        printf("\n");
-        printf("1) Показать поток данных\n");
-        printf("2) Зайти в меню дампа\n");
+        // printf("========================================================================\n");
+        // printf("                             Главное меню                               \n");
+        // printf("========================================================================\n");
+        // printf("\n");
+        // printf("1) Показать поток данных\n");
+        // printf("2) Зайти в меню дампа\n");
 
-        printf("%s", restorecursor);
+        // printf("%s", restorecursor);
 
         sleep(2);
 
