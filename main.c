@@ -102,6 +102,11 @@ int main(int argc, char * argv[])
     }
     Thread_CDC_Device.threads_cdc = thread_cdc_generic;
 
+    if (pipe(hotplug_pipe) == -1) {
+        perror("Ошибка создания pipe");
+        return EXIT_FAILURE;
+    }
+
     int result;
 
     result = pthread_create(&pthread_hotpug_connect, NULL, thread_hotpug_connect, NULL);

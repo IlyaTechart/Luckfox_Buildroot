@@ -3,6 +3,7 @@
 #include "usb_com.h"
 #include "frames_structure.h"
 #include "rw_file.h"
+#include "epoll.h"
 
 /// @brief 
 /////////
@@ -10,9 +11,9 @@ Thread_CDC_Device_t Thread_CDC_Device = {0};
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
 
-
 Queue_Handle_t Queue_dump;
 Queue_Handle_t Queue_ave;
+
 /// @brief Для режимов работы thread_display 
 Print_Mode_t Print_Mode = SHOW_NONE;
 
@@ -152,12 +153,13 @@ void* thread_hotpug_connect(void* arg)
         perror("Ошибка bind Netlink"); 
         return NULL; 
     }
+    
+    Epoll_Add_Pipe(hotplug_pipe);
 
     printf("[HOTPLUG] Поток слежения Netlink запущен. Ждем события USB...\n");
 
     // Буфер для приема данных от ядра
     char buffer[4096]; 
-    char print_bf[100];
 
     while(1)
     {
@@ -168,22 +170,63 @@ void* thread_hotpug_connect(void* arg)
         
         if (len <= 0) continue; // Ошибка чтения или пустой пакет, читаем заново
 
-        printf("\n=== НОВЫЙ ПАКЕТ ОТ ЯДРА (Длина: %d байт) ===\n", len);
+        // Переменные, куда мы сохраним найденные значения
+        char *action = NULL;
+        char *devname = NULL;
+        char *subsystem = NULL;
 
-        // Идем по буферу и печатаем каждую строку отдельно
         int i = 0;
-        while (i < len) 
+        // Парсинг сообщения от ядра 
+        while(i < len)
         {
             char *current_string = &buffer[i];
-            
-            // Печатаем текущую подстроку
-            printf("%s\n", current_string);
-            
-            // Перепрыгиваем через саму строку и обязательный '\0' в конце
-            i += strlen(current_string) + 1; 
+
+            if (strncmp(current_string, "ACTION=", 7) == 0) {
+                action = current_string + 7; // Сохраняем указатель на само значение (после "ACTION=")
+            } 
+            else if (strncmp(current_string, "DEVNAME=", 8) == 0) {
+                devname = current_string + 8;
+            } 
+            else if (strncmp(current_string, "SUBSYSTEM=", 10) == 0) {
+                subsystem = current_string + 10;
+            }
+
+            i += strlen(current_string) + 1;
         }
-        printf("===========================================\n");
+
+                // 3. Анализируем то, что нашли
+        // Нам интересны только устройства, где SUBSYSTEM=tty и имя начинается на "ttyACM"
+        if (subsystem && strcmp(subsystem, "tty") == 0 && 
+            devname && strncmp(devname, "ttyACM", 6) == 0) 
+        {
+            HotplugMsg_t msg;
+            
+            // Ядро присылает DEVNAME="ttyACM0". Нам для функции open() нужен полный путь.
+            // Поэтому клеим приставку "/dev/"
+            snprintf(msg.device_path, sizeof(msg.device_path), "/dev/%s", devname);
+
+            // Если кабель воткнули
+            if (action && strcmp(action, "add") == 0) 
+            {
+                msg.action = USB_ACTION_ADD;
+                printf("[HOTPLUG] Подключено устройство: %s. Отправляем команду в Конвейер.\n", msg.device_path);
+                
+                // Кидаем записку в нашу "трубу" для epoll-потока
+                write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
+            } 
+            // Если кабель выдернули
+            else if (action && strcmp(action, "remove") == 0) 
+            {
+                msg.action = USB_ACTION_REMOVE;
+                printf("[HOTPLUG] Отключено устройство: %s. Отправляем команду в Конвейер.\n", msg.device_path);
+                
+                // Кидаем записку в нашу "трубу"
+                write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
+            }
+        }
     }
+    close(fd);
+    return NULL;
 }
 
 
@@ -204,29 +247,6 @@ void* thread_cdc_generic(void* arg)
         }
     }
 
-    int epoll_fd = epoll_create1(0);
-    if (epoll_fd == -1) {
-        perror("Ошибка: epoll_create1");
-        exit(EXIT_FAILURE);
-    }
-
-    struct epoll_event event;
-
-    for(uint16_t i = 0; i < Thread_CDC_Device->TotalNumberOfDevice; i++ )
-    {
-        if(Thread_CDC_Device->COM_Ports_Handle[i].File_Descriptor < 0){
-
-            continue;
-        }
-        event.events = EPOLLIN;
-        event.data.ptr = &Thread_CDC_Device->COM_Ports_Handle[i];
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, Thread_CDC_Device->COM_Ports_Handle[i].File_Descriptor, &event) == -1) {
-            fprintf(stderr,"Ошибка: epoll_ctl не добалвен для устройсва с номером %d", Thread_CDC_Device->COM_Ports_Handle[i].DeviceNumber);
-        }
-    }
-
-    struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
-
     Queue_Init(&Queue_dump, TAKE_HEAP_MEMORY_FOR_ELEMENTS);
     Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
 
@@ -238,16 +258,9 @@ void* thread_cdc_generic(void* arg)
     {
         DumpData_Rx.buffer = (ModulData_t*)calloc(TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t));
         AVE_Data_Rx.buffer = (ModulData_t*)calloc( 1 , sizeof(ModulData_t));
-        int nfds = epoll_wait(epoll_fd, events, SUPPORT_NUMBER_DEVICE_USB, -1);
-        if (nfds == -1) {
-            if (errno == EINTR) {
-                // Вызов прерван сигналом (например, отладчиком GDB).
-                // Это нормально, просто игнорируем и ждем данные дальше.
-                continue;
-            }
-            perror("Ошибка: epoll_wait\n");
-            free(DumpData_Rx.buffer);
-            exit(EXIT_FAILURE);
+        int nfds = Epoll_Wait();
+        if(nfds < 0){
+            continue;
         }
 
         int num_bytes = 0;
@@ -260,34 +273,40 @@ void* thread_cdc_generic(void* arg)
                 uint32_t Head_Frame = 0;
                 KindOfHead = Read_Head_Frame(COM_Ports_Active, &Head_Frame);
 
-                if( KindOfHead == READ_HEAD_DUMP ){
+                switch (KindOfHead)
+                {
+                case READ_HEAD_DUMP:
                     if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
                     {
                         num_bytes = Read_Data_Dump(COM_Ports_Active, &DumpData_Rx);
                         if(num_bytes <= 0){
-                            goto err_mrk;
+                            Epoll_Delete(COM_Ports_Active);
+                            continue;
                         }
                         if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
-                            goto err_mrk;
+                            Epoll_Delete(COM_Ports_Active);
+                            continue;
                         }
                     }
-                }else if( KindOfHead == READ_HEAD_AVE ){
+                    break;
+                
+                case READ_HEAD_AVE:
                     if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
                     {
                         num_bytes = Read_AVE_Frame(COM_Ports_Active, &AVE_Data_Rx);
                         if(num_bytes <= 0){
-                            goto err_mrk;
+                            Epoll_Delete(COM_Ports_Active);
+                            continue;
                         }
                         if(Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0){
-                            goto err_mrk;
+                            Epoll_Delete(COM_Ports_Active);
+                            continue;
                         }
                     }
-                }else{
-                    err_mrk:
-                    printf("Устройство %s не прочитало head и было удаленоиз epoll\n", COM_Ports_Active->path_ttyACM);
-                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
-                    close(COM_Ports_Active->File_Descriptor);
-                    continue;
+                    break;
+                
+                default:
+                    break;
                 }
 
                 if(AVE_Data_Rx.tail_frames == ID_TAIL_FRMES)

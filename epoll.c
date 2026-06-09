@@ -60,3 +60,11 @@ void Epoll_Delete(COM_Ports_Handle_t* COM_Ports_Active)
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
     close(COM_Ports_Active->File_Descriptor);
 }
+
+void Epoll_Add_Pipe(int *fd)
+{
+    struct epoll_event event;
+    event.events = EPOLLIN;
+    event.data.fd = *fd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, *fd, &event);
+}
