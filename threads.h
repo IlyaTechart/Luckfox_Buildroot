@@ -9,13 +9,18 @@
 #include <termios.h>
 #include <sys/epoll.h>
 #include <mqueue.h>
+#include <sys/socket.h>
+#include <linux/netlink.h>
 #include "usb_com.h"
 #include "display_data.h"
 
 // Глобальные макросы пользовательской программы 
 #define SUPPORT_NUMBER_DEVICE_USB 24
-#define NUMBER_ELLEMENTS_RECESIVE 2000
+#define NUMBER_ELLEMENTS_RECESIVE 10000
 #define TAKE_HEAP_MEMORY_FOR_ELEMENTS 10000
+
+
+#define SIZE_QUEUE_DISPLAY_ELEMENTS 20
 
 
 
@@ -58,6 +63,7 @@ typedef struct
 }Thread_CDC_Device_t;
 
 Thread_CDC_Device_t Thread_CDC_Device;
+pthread_t pthread_hotpug_connect;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
 extern Queue_Handle_t Queue;
@@ -66,6 +72,7 @@ extern Queue_Handle_t Queue;
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
 void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode);
 int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode);
+void* thread_hotpug_connect(void* arg);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);
 void* thread_filesystem(void* arg);

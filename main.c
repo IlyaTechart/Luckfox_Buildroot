@@ -9,6 +9,7 @@
 #include <mqueue.h>
 #include <time.h>
 #include <glob.h>
+#include <sys/epoll.h>
 #include "threads.h"
 #include "usb_com.h"
 
@@ -91,7 +92,7 @@ int Get_Discription_Connected_Devices(void)
 
 int main(int argc, char * argv[])
 {
-        setvbuf(stdout, NULL, _IONBF, 0);// Отключение буферизации вывода в терминал. 
+    setvbuf(stdout, NULL, _IONBF, 0);// Отключение буферизации вывода в терминал. 
 
     Thread_CDC_Device.COM_Ports_Handle = COM_Ports_Handle;
     int devices_count = Get_Discription_Connected_Devices();
@@ -102,38 +103,46 @@ int main(int argc, char * argv[])
     Thread_CDC_Device.threads_cdc = thread_cdc_generic;
 
     int result;
-    result = pthread_create(&Thread_CDC_Device.pthread, NULL, Thread_CDC_Device.threads_cdc , &Thread_CDC_Device);
+
+    result = pthread_create(&pthread_hotpug_connect, NULL, thread_hotpug_connect, NULL);
     if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток: generic\n");
+    fprintf(stderr,"Не удалось создать поток: hotpug_connect\n");
     return EXIT_FAILURE;
     }
-    printf("Поток прёма данных создан\n");
+    printf("Поток горячего подключения устройств USB создан\n");
 
-    result = pthread_create(&pthread_display, NULL, thread_display , NULL);
-    if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток: display\n");
-    return EXIT_FAILURE;
-    }
-    printf("Поток вывода информации созадн\n");
+    // result = pthread_create(&Thread_CDC_Device.pthread, NULL, Thread_CDC_Device.threads_cdc , &Thread_CDC_Device);
+    // if (result != 0) {
+    // fprintf(stderr,"Не удалось создать поток: generic\n");
+    // return EXIT_FAILURE;
+    // }
+    // printf("Поток прёма данных создан\n");
 
-    result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
-    if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток: display\n");
-    return EXIT_FAILURE;
-    }
-    printf("Поток вывода информации созадн\n");
+    // result = pthread_create(&pthread_display, NULL, thread_display , NULL);
+    // if (result != 0) {
+    // fprintf(stderr,"Не удалось создать поток: display\n");
+    // return EXIT_FAILURE;
+    // }
+    // printf("Поток вывода информации созадн\n");
+
+    // result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
+    // if (result != 0) {
+    // fprintf(stderr,"Не удалось создать поток: display\n");
+    // return EXIT_FAILURE;
+    // }
+    // printf("Поток вывода информации созадн\n");
 
 
-    const char *green = "\033[32m";  // зелёный текст
-    const char *white = "\033[37m";  // белый текст
-    const char *blue = "\033[35m";  // белый текст
-    const char *reset = "\033[0m";   // сброс всех атрибутов
+    // const char *green = "\033[32m";  // зелёный текст
+    // const char *white = "\033[37m";  // белый текст
+    // const char *blue = "\033[35m";  // белый текст
+    // const char *reset = "\033[0m";   // сброс всех атрибутов
 
-    const char *setcursor = "\x1b[s"; // Сохранить текущую позицию курсора
-    const char *restorecursor = "\x1b[u"; // Восстановить сохраненную позицию курсора
-    const char *setcornercursor = "\x1b[H"; // Переместить курсор в левый верхний угол (1,1)
+    // const char *setcursor = "\x1b[s"; // Сохранить текущую позицию курсора
+    // const char *restorecursor = "\x1b[u"; // Восстановить сохраненную позицию курсора
+    // const char *setcornercursor = "\x1b[H"; // Переместить курсор в левый верхний угол (1,1)
   
-    const char *clearsring = "\x1b[2K"; // Очистить всю строку, где находится курсор
+    // const char *clearsring = "\x1b[2K"; // Очистить всю строку, где находится курсор
 
 
 

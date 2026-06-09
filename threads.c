@@ -131,6 +131,61 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     return count_copyed_frame;
 }
 
+void* thread_hotpug_connect(void* arg)
+{
+    int fd;
+    struct sockaddr_nl addr;
+
+    fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_KOBJECT_UEVENT);
+    if (fd < 0)
+    { 
+        perror("Ошибка создания сокета Netlink"); 
+        return NULL; 
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.nl_family = AF_NETLINK;
+    addr.nl_pid = getpid();
+    addr.nl_groups = 1;
+    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) 
+    { 
+        perror("Ошибка bind Netlink"); 
+        return NULL; 
+    }
+
+    printf("[HOTPLUG] Поток слежения Netlink запущен. Ждем события USB...\n");
+
+    // Буфер для приема данных от ядра
+    char buffer[4096]; 
+    char print_bf[100];
+
+    while(1)
+    {
+
+        // 1. Читаем данные из сокета. 
+        // Поток здесь ЗАСНЕТ и будет ждать, пока не произойдет событие.
+        int len = recv(fd, buffer, sizeof(buffer), 0);
+        
+        if (len <= 0) continue; // Ошибка чтения или пустой пакет, читаем заново
+
+        printf("\n=== НОВЫЙ ПАКЕТ ОТ ЯДРА (Длина: %d байт) ===\n", len);
+
+        // Идем по буферу и печатаем каждую строку отдельно
+        int i = 0;
+        while (i < len) 
+        {
+            char *current_string = &buffer[i];
+            
+            // Печатаем текущую подстроку
+            printf("%s\n", current_string);
+            
+            // Перепрыгиваем через саму строку и обязательный '\0' в конце
+            i += strlen(current_string) + 1; 
+        }
+        printf("===========================================\n");
+    }
+}
+
 
 
 /// @brief Поток осуществяет приём статических данных с логера, а так же прём дампов.
@@ -173,7 +228,7 @@ void* thread_cdc_generic(void* arg)
     struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
 
     Queue_Init(&Queue_dump, TAKE_HEAP_MEMORY_FOR_ELEMENTS);
-    Queue_Init(&Queue_ave, 1);
+    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
 
     Package_t DumpData_Rx = {0};
     Package_t AVE_Data_Rx = {0};
@@ -235,7 +290,7 @@ void* thread_cdc_generic(void* arg)
                     continue;
                 }
 
-                if(AVE_Data_Rx.tail_frames = ID_TAIL_FRMES)
+                if(AVE_Data_Rx.tail_frames == ID_TAIL_FRMES)
                 {
                     Print_Mode = SHOW_AVE_MODE;
                     Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
@@ -302,7 +357,7 @@ void* thread_display(void* arg)
         
         case SHOW_DUMP_MODE:{
 
-            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
             printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
             for(uint32_t i = 0; i < count_data; i++)
             {
