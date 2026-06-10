@@ -5,12 +5,13 @@
 #include "rw_file.h"
 #include "epoll.h"
 
-/// @brief 
-/////////
-Thread_CDC_Device_t Thread_CDC_Device = {0};
+
+/// @brief Привязанные структуры к их потокам 
+pthread_t pthread_cdc_generic;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
 
+/// @brief Экземпляры очередей 
 Queue_Handle_t Queue_dump;
 Queue_Handle_t Queue_ave;
 
@@ -239,25 +240,25 @@ void* thread_cdc_generic(void* arg)
     Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
     uint32_t ret = 0;
 
-    for(uint8_t i = 0; i < Thread_CDC_Device->TotalNumberOfDevice; i++){
+    USB_Buffers_Init();
+
+    for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++){
         ret = USB_Add_New_Device(&Thread_CDC_Device->COM_Ports_Handle[i]);
         if(ret != 0){
-            perror("Ошибка: USB_Com_Init - не инициализировался успешно");//TODO
+            perror("Ошибка: USB_Com_Init - не инициализировался успешно\n");//TODO
             exit(EXIT_FAILURE);
         }
     }
 
-    Queue_Init(&Queue_dump, TAKE_HEAP_MEMORY_FOR_ELEMENTS);
-    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
+    Epoll_Add_InitUSB(Thread_CDC_Device);
 
-    Package_t DumpData_Rx = {0};
-    Package_t AVE_Data_Rx = {0};
+    Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
 
     printf("Вход в поток приёма данных\n");
     while(1)
     {
-        DumpData_Rx.buffer = (ModulData_t*)calloc(TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t));
-        AVE_Data_Rx.buffer = (ModulData_t*)calloc( 1 , sizeof(ModulData_t));
+
         int nfds = Epoll_Wait();
         if(nfds < 0){
             continue;
@@ -278,7 +279,7 @@ void* thread_cdc_generic(void* arg)
                 case READ_HEAD_DUMP:
                     if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
                     {
-                        num_bytes = Read_Data_Dump(COM_Ports_Active, &DumpData_Rx);
+                        num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
                         if(num_bytes <= 0){
                             Epoll_Delete(COM_Ports_Active);
                             continue;
@@ -293,7 +294,7 @@ void* thread_cdc_generic(void* arg)
                 case READ_HEAD_AVE:
                     if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
                     {
-                        num_bytes = Read_AVE_Frame(COM_Ports_Active, &AVE_Data_Rx);
+                        num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
                         if(num_bytes <= 0){
                             Epoll_Delete(COM_Ports_Active);
                             continue;
@@ -327,75 +328,72 @@ void* thread_cdc_generic(void* arg)
                 }
             }  
         }
-        free(DumpData_Rx.buffer);  
-        free(AVE_Data_Rx.buffer);
+ 
         memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
         memset(&AVE_Data_Rx, 0x00, sizeof(AVE_Data_Rx));
     }
 
-    free(DumpData_Rx.buffer);  
-    free(AVE_Data_Rx.buffer);
     return 0;
 }
 
 /// @brief Поток вывода в консоль информации 
 /// @param arg - NULL
 /// @return - NON RETURN    
-void* thread_display(void* arg)
-{
-    ModulData_t* ModulDatPrintDump = (ModulData_t*)calloc( TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t) );
+// void* thread_display(void* arg)
+// {
+//     //ModulData_t* ModulDatPrintDump = (ModulData_t*)calloc( TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t) );
 
     
 
-    uint32_t index_count = 0;
-    printf("Вход в поток вывода информации\n");
-    while(1)
-    {
+//     uint32_t index_count = 0;
+//     printf("Вход в поток вывода информации\n");
+//     while(1)
+//     {
         
         
-        ModulData_t ModulDataPrintAVE;
-        switch (Print_Mode)
-        {
-        case SHOW_NONE:{
-            usleep(100000);
-            break;
-        }
-        case SHOW_AVE_MODE:{
+//         ModulData_t ModulDataPrintAVE;
+//         switch (Print_Mode)
+//         {
+//         case SHOW_NONE:{
+//             usleep(100000);
+//             break;
+//         }
+//         case SHOW_AVE_MODE:{
 
-            int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
-            logger_print_one_frame(&ModulDataPrintAVE, index_count);
-            if (index_count < UINT32_MAX) {
-                index_count++;
-            } else {
-                index_count = 0;
-            }
+//             int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
+//             logger_print_one_frame(&ModulDataPrintAVE, index_count);
+//             if (index_count < UINT32_MAX) {
+//                 index_count++;
+//             } else {
+//                 index_count = 0;
+//             }
 
-            Print_Mode = SHOW_NONE;
-            break;
-        }
+//             Print_Mode = SHOW_NONE;
+//             break;
+//         }
         
-        case SHOW_DUMP_MODE:{
+//         case SHOW_DUMP_MODE:{
 
-            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
-            printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
-            for(uint32_t i = 0; i < count_data; i++)
-            {
-                if(ModulDatPrintDump[i].packet.alarms.raw != 0){
-                    logger_print_one_frame(&ModulDataPrintAVE, i);
-                }
-            }
-            Print_Mode = SHOW_NONE;
-            break;
+//             int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
+//             printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
+//             for(uint32_t i = 0; i < count_data; i++)
+//             {
+//                 if(ModulDatPrintDump[i].packet.alarms.raw != 0){
+//                     logger_print_one_frame(&ModulDataPrintAVE, i);
+//                 }
+//             }
+//             Print_Mode = SHOW_NONE;
+//             break;
 
-        }
+//         }
             
-        default:
-        sleep(2);
-            break;
-        }
+//         default:
+//         sleep(2);
+//             break;
+//         }
 
-    }
-}
+//     }
+// }
 
 
 void* thread_filesystem(void* arg)

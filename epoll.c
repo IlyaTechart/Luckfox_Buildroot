@@ -15,7 +15,7 @@ void Epoll_Add_InitUSB(Thread_CDC_Device_t* Thread_CDC_Device)
 
     struct epoll_event event;
 
-    for(uint16_t i = 0; i < Thread_CDC_Device->TotalNumberOfDevice; i++ )
+    for(uint16_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++ )
     {
         if(Thread_CDC_Device->COM_Ports_Handle[i].File_Descriptor < 0){
 

@@ -11,6 +11,15 @@
 #include <sys/epoll.h>
 #include "frames_structure.h"
 
+
+#define SUPPORT_NUMBER_DEVICE_USB 24
+#define NUMBER_ELLEMENTS_RECESIVE 10000
+#define TAKE_MEMORY_FOR_ELEMENTS  10000
+
+#if NUMBER_ELLEMENTS_RECESIVE > TAKE_MEMORY_FOR_ELEMENTS
+#error "The number TAKE_MEMORY_FOR_ELEMENTS must be greater than the NUMBER_ELLEMENTS_RECESIVE."
+#endif
+
 // ID head-ров сообщений от Device по их типу 
 #define ID_AVE_FRAME_START   (const uint32_t)0x22446688
 #define ID_DUMP_FRAME_START  (const uint32_t)0x336699FF
@@ -31,23 +40,49 @@ typedef enum{
 
 typedef struct {
     struct termios tty;
-    char path_ttyACM[100];
+
+    char path_ttyACM[100]; // Для работы с файлами 
     int File_Descriptor;
-    int DeviceNumber;
-    char* name_device[20];
-    char* path_dump_file[50];
+
+    int DeviceNumber; // Состояния устройства 
+    bool active;
+    uint16_t Device_ID;
+    char* name_device[20];  
+
+    char* path_dump_file[50]; // Для работы с дампом и записью в файловую систему
     FILE* file_dump;
 }COM_Ports_Handle_t;
 
+/// @brief 
+typedef struct {
+    COM_Ports_Handle_t* COM_Ports_Handle;
+    uint16_t CurrentNum_Device; // Текущее количесвто устройств 
+    uint16_t NumberDev_of_Init; // Число устрйоств при инициализации 
+}Thread_CDC_Device_t;
 
-COM_Ports_Handle_t COM_Ports_Handle[24];
+typedef enum{
+    FRAME_PACKAGE_OK = 0,
+
+    NOT_EPOLLIN_FROM_EPOLL
+}Staite_Msg_Frame;
+
+typedef struct {
+    Staite_Msg_Frame States[SUPPORT_NUMBER_DEVICE_USB];
+    uint8_t ID_Dev_Who_From;
+
+    
+}Monitor_Msg_t;
 
 
 
+Thread_CDC_Device_t Thread_CDC_Device;
+COM_Ports_Handle_t COM_Ports_Handle[SUPPORT_NUMBER_DEVICE_USB];
+
+
+void USB_Buffers_Init(void);
 uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port);
 int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size, uint32_t Timeout);
 ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head);
 int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
-int Read_Data_Dump(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
-int Read_AVE_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
+int Read_Data_Payload(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx);
 int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);

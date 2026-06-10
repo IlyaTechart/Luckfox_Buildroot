@@ -4,14 +4,39 @@
 #include <time.h>
 #include "epoll.h"
 
-COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
 
+
+COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
+Thread_CDC_Device_t Thread_CDC_Device = {0};
+
+
+/// @brief Сущности пакетных форматов 
+Package_t DumpData_Rx = {0};
+Package_t AVE_Data_Rx = {0};
+
+/// @brief Буферы для покетных форматов 
+ModulData_t Buffer_Dump[TAKE_MEMORY_FOR_ELEMENTS * sizeof(ModulData_t)] = {0};
+ModulData_t Buffer_AVE = {0};
+
+/// @brief Инциализируем глобальные буферы 
+/// @param  
+void USB_Buffers_Init(void)
+{
+    memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
+    DumpData_Rx.buffer = Buffer_Dump;
+
+    memset(&AVE_Data_Rx, 0x00, sizeof(AVE_Data_Rx));
+    DumpData_Rx.buffer = &Buffer_AVE;
+
+}
 
 /// @brief 
 /// @param COM_Port 
 /// @return 
 uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 {
+
+    static uint16_t ID_dev = 0;
 
     int LenPath = strlen(COM_Port->path_ttyACM);
     char path_ttyACM[100];                                              // Обработка длины пути к файлу COM устройства 
@@ -55,6 +80,12 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
     tcflush(COM_Port->File_Descriptor, TCIOFLUSH);                      // Отчистка буфера перед работой 
     printf("Порт: %s успешно открыт и настроен. Ожидание данных...\n", path_ttyACM);
 
+    Thread_CDC_Device.CurrentNum_Device += 1;
+    COM_Port->active = true;
+
+    if(ID_dev != UINT16_MAX){ ID_dev++; }else{ ID_dev = 0; }
+
+
     return 0;
 
 }
@@ -67,7 +98,7 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 uint32_t USB_Remove_Device(char *PathDevice, uint8_t len, Thread_CDC_Device_t *Thread_CDC_Device)
 {
 
-    uint8_t HowMuchDev = Thread_CDC_Device->TotalNumberOfDevice;
+    uint8_t HowMuchDev = Thread_CDC_Device->CurrentNum_Device;
     char path[256];
 
     for(uint8_t i = 0; i < HowMuchDev; i++)
@@ -76,12 +107,12 @@ uint32_t USB_Remove_Device(char *PathDevice, uint8_t len, Thread_CDC_Device_t *T
 
         memcpy( path, COM_Port->path_ttyACM, strlen(COM_Port->path_ttyACM));
 
-
         if(strncmp(PathDevice, path, len) == 0 )
         {
             Epoll_Delete(COM_Port);
             close(COM_Port->File_Descriptor);
             memset( COM_Port, 0x00, sizeof(COM_Ports_Handle_t) );
+            Thread_CDC_Device->CurrentNum_Device -= 1;
             return 0;  
         }
     }
@@ -141,10 +172,10 @@ void USB_Com_DeInit(int File_Descriptor, uint8_t NumberDevice)
     close(File_Descriptor);
 }
 
-/// @brief 
-/// @param COMPort 
-/// @param DumpData_Rx 
-/// @return 
+/// @brief Читает Head индивидульный фрейма 
+/// @param COMPort Указатель на струтуру COM_Ports_Handle_t
+/// @param read_head Указатель на переменную куда схораниться head фрейма 
+/// @return Возвращает значение состояния enum ReadDataState_t
 ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head)
 {
 
@@ -189,11 +220,11 @@ int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx)
     return Data_Rx->count_elements;
 }
 
-int Read_Data_Dump(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
+int Read_Data_Payload(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx)
 {
-    int number_read_data = 0;
-    number_read_data = USB_Read_COM(COMPort, DumpData_Rx->buffer, DumpData_Rx->count_elements * sizeof(ModulData_t), 7000);
-    if( number_read_data < (DumpData_Rx->count_elements * sizeof(ModulData_t)) ) {
+    size_t bytes_to_read = Data_Rx->count_elements * sizeof(ModulData_t);
+    int number_read_data = USB_Read_COM(COMPort, Data_Rx->buffer, bytes_to_read, 7000);
+    if( number_read_data < (Data_Rx->count_elements * sizeof(ModulData_t)) ) {
         tcflush(COMPort->File_Descriptor, TCIFLUSH);
         return -1; // Ошибка чтения
     }
@@ -201,21 +232,6 @@ int Read_Data_Dump(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx)
                         number_read_data / sizeof(ModulData_t), number_read_data % sizeof(ModulData_t));
 
     return number_read_data;
-}
-
-int Read_AVE_Frame(COM_Ports_Handle_t* COMPort, Package_t *AVE_Data_Rx)
-{
-    int number_read_data = 0;
-    number_read_data = USB_Read_COM(COMPort, AVE_Data_Rx->buffer, AVE_Data_Rx->count_elements * sizeof(ModulData_t), 7000);
-    if( number_read_data < (AVE_Data_Rx->count_elements * sizeof(ModulData_t)) ) {
-        tcflush(COMPort->File_Descriptor, TCIFLUSH);
-        return -1; // Ошибка чтения
-    }
-    printf("Общее колличество принятых полезных данных: %d Байт %d.%d элементов\n", number_read_data, 
-                        number_read_data / sizeof(ModulData_t), number_read_data % sizeof(ModulData_t));
-
-    return number_read_data;
-
 }
 
 int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx)
@@ -233,6 +249,72 @@ int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx)
 
     return 0;
 }
+
+
+int Receive_msg(int nfds)
+{
+    int num_bytes = 0;
+    for(uint16_t i = 0; i < nfds; i++ )
+    {
+        COM_Ports_Handle_t* COM_Ports_Active = (COM_Ports_Handle_t*)events[i].data.ptr;
+
+        memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
+
+        ReadDataState_t KindOfHead;
+        if(events[i].events & EPOLLIN){
+            uint32_t Head_Frame = 0;
+            KindOfHead = Read_Head_Frame(COM_Ports_Active, &Head_Frame);
+
+            switch (KindOfHead)
+            {
+            case READ_HEAD_DUMP:
+                if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
+                {
+                    num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
+                    if(num_bytes <= 0){
+                        Epoll_Delete(COM_Ports_Active);
+                        continue;
+                    }
+                    if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
+                        Epoll_Delete(COM_Ports_Active);
+                        continue;
+                    }
+                }
+                if(DumpData_Rx.tail_frames != ID_TAIL_FRMES) continue;
+                break;
+            
+            case READ_HEAD_AVE:
+                if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
+                {
+                    num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
+                    if(num_bytes <= 0){
+                        Epoll_Delete(COM_Ports_Active);
+                        continue;
+                    }
+                    if(Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0){
+                        Epoll_Delete(COM_Ports_Active);
+                        continue;
+                    }
+                }
+                if(AVE_Data_Rx.tail_frames != ID_TAIL_FRMES) continue;
+                break;
+            
+            default:
+                break;
+            }
+
+        }else{
+
+        }
+
+        return 0;
+    }
+
+
+
+}
+
+
 
 
 

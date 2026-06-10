@@ -15,10 +15,6 @@
 #include "usb_com.h"
 #include "display_data.h"
 
-// Глобальные макросы пользовательской программы 
-#define SUPPORT_NUMBER_DEVICE_USB 24
-#define NUMBER_ELLEMENTS_RECESIVE 10000
-#define TAKE_HEAP_MEMORY_FOR_ELEMENTS 10000
 
 
 #define SIZE_QUEUE_DISPLAY_ELEMENTS 20
@@ -76,19 +72,8 @@ typedef struct{
 
 
 
-/// @brief 
-typedef struct 
-{
-    void* (*threads_cdc)(void*);
-    pthread_t pthread;
-    COM_Ports_Handle_t* COM_Ports_Handle;
-    uint16_t TotalNumberOfDevice;
-}Thread_CDC_Device_t;
 
-
-
-
-Thread_CDC_Device_t Thread_CDC_Device;
+pthread_t pthread_cdc_generic;
 pthread_t pthread_hotpug_connect;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;

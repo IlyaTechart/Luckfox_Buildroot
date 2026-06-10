@@ -73,17 +73,17 @@ int Get_Discription_Connected_Devices(void)
                 );
             }
             // Задаём количество устройств для инициализации потоков
-            Thread_CDC_Device.TotalNumberOfDevice = found_devices;
+            Thread_CDC_Device.NumberDev_of_Init = found_devices;
         }
         
     } else if (return_value == GLOB_NOMATCH) {
         printf("Устройства /dev/ttyACM* не найдены!\n");
-        Thread_CDC_Device.TotalNumberOfDevice = 0;
+        Thread_CDC_Device.NumberDev_of_Init = 0;
     } else {
         printf("Произошла ошибка при поиске устройств (код %d)\n", return_value);
-        Thread_CDC_Device.TotalNumberOfDevice = 0;
+        Thread_CDC_Device.NumberDev_of_Init = 0;
     }
-    
+
     // Обязательно освобождаем память, которую выделила функция glob
     globfree(&glob_result);
     return found_devices;
@@ -100,7 +100,6 @@ int main(int argc, char * argv[])
         fprintf(stderr, "Ошибка: Не найдено ни одного устройства для подключения.\n");
         return EXIT_FAILURE; // Завершаем программу, если логгер не подключен
     }
-    Thread_CDC_Device.threads_cdc = thread_cdc_generic;
 
     if (pipe(hotplug_pipe) == -1) {
         perror("Ошибка создания pipe");
@@ -116,12 +115,12 @@ int main(int argc, char * argv[])
     }
     printf("Поток горячего подключения устройств USB создан\n");
 
-    // result = pthread_create(&Thread_CDC_Device.pthread, NULL, Thread_CDC_Device.threads_cdc , &Thread_CDC_Device);
-    // if (result != 0) {
-    // fprintf(stderr,"Не удалось создать поток: generic\n");
-    // return EXIT_FAILURE;
-    // }
-    // printf("Поток прёма данных создан\n");
+    result = pthread_create(&pthread_cdc_generic, NULL, thread_cdc_generic , &Thread_CDC_Device);
+    if (result != 0) {
+    fprintf(stderr,"Не удалось создать поток: generic\n");
+    return EXIT_FAILURE;
+    }
+    printf("Поток прёма данных создан\n");
 
     // result = pthread_create(&pthread_display, NULL, thread_display , NULL);
     // if (result != 0) {
