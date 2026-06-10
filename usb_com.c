@@ -26,7 +26,7 @@ void USB_Buffers_Init(void)
     DumpData_Rx.buffer = Buffer_Dump;
 
     memset(&AVE_Data_Rx, 0x00, sizeof(AVE_Data_Rx));
-    DumpData_Rx.buffer = &Buffer_AVE;
+    AVE_Data_Rx.buffer = &Buffer_AVE;
 
 }
 
@@ -82,7 +82,7 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 
     Thread_CDC_Device.CurrentNum_Device += 1;
     COM_Port->active = true;
-
+    COM_Port->Device_ID = ID_dev;
     if(ID_dev != UINT16_MAX){ ID_dev++; }else{ ID_dev = 0; }
 
 
@@ -251,12 +251,17 @@ int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx)
 }
 
 
-int Receive_msg(int nfds)
+void Receive_msg(int nfds, Monitor_Msg_t *Monitor_Debug)
 {
     int num_bytes = 0;
+    memset(Monitor_Debug, 0x00, sizeof(Monitor_Msg_t) * SUPPORT_NUMBER_DEVICE_USB);
     for(uint16_t i = 0; i < nfds; i++ )
     {
         COM_Ports_Handle_t* COM_Ports_Active = (COM_Ports_Handle_t*)events[i].data.ptr;
+
+        Monitor_Debug[i].activeate = true;
+        Monitor_Debug[i].ID_Dev_Who_From = COM_Ports_Active->Device_ID;
+        memcpy(&Monitor_Debug[i].NameDev, &COM_Ports_Active->path_ttyACM, 20);
 
         memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
 
@@ -267,34 +272,45 @@ int Receive_msg(int nfds)
 
             switch (KindOfHead)
             {
-            case READ_HEAD_DUMP:
+            case READ_HEAD_DUMP: 
+                Monitor_Debug[i].KindeOfFrame = READ_HEAD_DUMP;
                 if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
                 {
                     num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
                     if(num_bytes <= 0){
                         Epoll_Delete(COM_Ports_Active);
+                        Monitor_Debug[i].States |= ERR_READ_DATA_PAYLOAD;
                         continue;
                     }
                     if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
                         Epoll_Delete(COM_Ports_Active);
+                        Monitor_Debug[i].States |= ERR_READ_TAIL;
                         continue;
                     }
+                }else{
+                    Monitor_Debug[i].States |= ERR_COUNT_FRAME;
                 }
+
                 if(DumpData_Rx.tail_frames != ID_TAIL_FRMES) continue;
                 break;
             
             case READ_HEAD_AVE:
+                Monitor_Debug[i].KindeOfFrame = READ_HEAD_AVE;
                 if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
                 {
-                    num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
+                    num_bytes = Read_Data_Payload(COM_Ports_Active, &AVE_Data_Rx);
                     if(num_bytes <= 0){
                         Epoll_Delete(COM_Ports_Active);
+                        Monitor_Debug[i].States |= ERR_READ_DATA_PAYLOAD;
                         continue;
                     }
                     if(Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0){
                         Epoll_Delete(COM_Ports_Active);
+                        Monitor_Debug[i].States |= ERR_READ_TAIL;
                         continue;
                     }
+                }else{
+                    Monitor_Debug[i].States |= ERR_COUNT_FRAME;
                 }
                 if(AVE_Data_Rx.tail_frames != ID_TAIL_FRMES) continue;
                 break;
@@ -304,13 +320,10 @@ int Receive_msg(int nfds)
             }
 
         }else{
-
+            Monitor_Debug[i].States |= NOT_EPOLLIN_FROM_EPOLL;
         }
 
-        return 0;
     }
-
-
 
 }
 

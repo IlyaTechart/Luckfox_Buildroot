@@ -44,10 +44,9 @@ typedef struct {
     char path_ttyACM[100]; // Для работы с файлами 
     int File_Descriptor;
 
-    int DeviceNumber; // Состояния устройства 
-    bool active;
+    bool active;            // Состояния устройства 
     uint16_t Device_ID;
-    char* name_device[20];  
+    char* name_device[20];  //reseved
 
     char* path_dump_file[50]; // Для работы с дампом и записью в файловую систему
     FILE* file_dump;
@@ -61,17 +60,25 @@ typedef struct {
 }Thread_CDC_Device_t;
 
 typedef enum{
-    FRAME_PACKAGE_OK = 0,
-
-    NOT_EPOLLIN_FROM_EPOLL
+    FRAME_PACKAGE_OK =              0,
+    ERR_COUNT_FRAME =        (1 << 0),
+    ERR_READ_DATA_PAYLOAD =  (1 << 1), 
+    ERR_READ_TAIL =          (1 << 2),
+    NOT_EPOLLIN_FROM_EPOLL = (1 << 3),
 }Staite_Msg_Frame;
 
 typedef struct {
-    Staite_Msg_Frame States[SUPPORT_NUMBER_DEVICE_USB];
+    Staite_Msg_Frame States;
+    ReadDataState_t KindeOfFrame;
     uint8_t ID_Dev_Who_From;
-
-    
+    char NameDev[20];
+    bool activeate;
 }Monitor_Msg_t;
+
+
+/// @brief Сущности пакетных форматов 
+Package_t DumpData_Rx;
+Package_t AVE_Data_Rx;
 
 
 
@@ -86,3 +93,4 @@ ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head
 int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
 int Read_Data_Payload(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx);
 int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
+void Receive_msg(int nfds, Monitor_Msg_t *Monitor_Debug);

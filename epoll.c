@@ -7,7 +7,7 @@ struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (передела�
 void Epoll_Add_InitUSB(Thread_CDC_Device_t* Thread_CDC_Device)
 {
 
-    int epoll_fd = epoll_create1(0);
+    epoll_fd = epoll_create1(0);
     if (epoll_fd == -1) {
         perror("Ошибка: epoll_create1");
         exit(EXIT_FAILURE);
@@ -24,7 +24,7 @@ void Epoll_Add_InitUSB(Thread_CDC_Device_t* Thread_CDC_Device)
         event.events = EPOLLIN;
         event.data.ptr = &Thread_CDC_Device->COM_Ports_Handle[i];
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, Thread_CDC_Device->COM_Ports_Handle[i].File_Descriptor, &event) == -1) {
-            fprintf(stderr,"Ошибка: epoll_ctl не добалвен для устройсва с номером %d", Thread_CDC_Device->COM_Ports_Handle[i].DeviceNumber);
+            fprintf(stderr,"Ошибка: epoll_ctl не добалвен для устройсва с ID %d", Thread_CDC_Device->COM_Ports_Handle[i].Device_ID);
         }
     }
 }
@@ -56,7 +56,7 @@ void Epoll_Add_Device(COM_Ports_Handle_t* COM_Ports_Active)
 
 void Epoll_Delete(COM_Ports_Handle_t* COM_Ports_Active)
 {
-    printf("Устройство %s не прочитало head и было удаленоиз epoll\n", COM_Ports_Active->path_ttyACM);
+    printf("Устройство %s было удаленоиз epoll\n", COM_Ports_Active->path_ttyACM);
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
     close(COM_Ports_Active->File_Descriptor);
 }

@@ -240,8 +240,6 @@ void* thread_cdc_generic(void* arg)
     Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
     uint32_t ret = 0;
 
-    USB_Buffers_Init();
-
     for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++){
         ret = USB_Add_New_Device(&Thread_CDC_Device->COM_Ports_Handle[i]);
         if(ret != 0){
@@ -264,73 +262,67 @@ void* thread_cdc_generic(void* arg)
             continue;
         }
 
-        int num_bytes = 0;
-        for(uint16_t i = 0; i < nfds; i++ )
+        if(events[0].data.fd == hotplug_pipe[0])
         {
-            COM_Ports_Handle_t* COM_Ports_Active = (COM_Ports_Handle_t*)events[i].data.ptr;
+            HotplugMsg_t msg;
+            read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
 
-            ReadDataState_t KindOfHead;
-            if(events[i].events & EPOLLIN){
-                uint32_t Head_Frame = 0;
-                KindOfHead = Read_Head_Frame(COM_Ports_Active, &Head_Frame);
+            if (msg.action == USB_ACTION_ADD) {
+                printf("[READER] Получил команду добавить %s\n", msg.device_path);
+                
+                // 1. Делаем open() для нового "/dev/ttyACM..."
+                // 2. Настраиваем Baudrate (ваш USB_Com_Init)
+                // 3. Получаем новый File_Descriptor для этого USB
+                // 4. ДОБАВЛЯЕМ ЕГО В EPOLL:
+                /*
+                struct epoll_event new_usb_ev;
+                new_usb_ev.events = EPOLLIN;
+                new_usb_ev.data.ptr = Pointer_to_your_COM_Handle; // Как в вашем старом коде
+                epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_usb_fd, &new_usb_ev);
+                */
+            } 
+            else if (msg.action == USB_ACTION_REMOVE) {
+                printf("[READER] Получил команду удалить %s\n", msg.device_path);
+                // 1. Ищем в вашем массиве COM_Ports_Handle устройство с таким именем
+                // 2. Делаем epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+                // 3. close(fd);
+                // 4. Помечаем порт как свободный
+            }
+            continue; // Обработали трубу, идем к следующему событию
 
-                switch (KindOfHead)
+        }else{
+            Monitor_Msg_t Monitor_Msg[SUPPORT_NUMBER_DEVICE_USB];
+
+            Receive_msg(nfds, Monitor_Msg);
+
+            for(uint16_t i = 0; i < nfds; i++ )
+            {
+                if(Monitor_Msg[i].activeate)
                 {
-                case READ_HEAD_DUMP:
-                    if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
+                    if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_AVE)
                     {
-                        num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
-                        if(num_bytes <= 0){
-                            Epoll_Delete(COM_Ports_Active);
-                            continue;
-                        }
-                        if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
-                            Epoll_Delete(COM_Ports_Active);
-                            continue;
-                        }
+                        Print_Mode = SHOW_AVE_MODE;
+                        Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
+
                     }
-                    break;
-                
-                case READ_HEAD_AVE:
-                    if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
+
+                    if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_DUMP)
                     {
-                        num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
-                        if(num_bytes <= 0){
-                            Epoll_Delete(COM_Ports_Active);
-                            continue;
+                        printf("Устройство %s передало правильный tail\n", Monitor_Msg[i].NameDev);
+                        for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
+                            Print_Mode = SHOW_DUMP_MODE;
+                            Queue_Push(&Queue_dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
                         }
-                        if(Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0){
-                            Epoll_Delete(COM_Ports_Active);
-                            continue;
-                        }
+
                     }
-                    break;
-                
-                default:
-                    break;
                 }
+            }
 
-                if(AVE_Data_Rx.tail_frames == ID_TAIL_FRMES)
-                {
-                    Print_Mode = SHOW_AVE_MODE;
-                    Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
-                    
-                }
-
-
-                if(DumpData_Rx.tail_frames == ID_TAIL_FRMES){
-                    printf("Устройство %s передало правильный tail\n", COM_Ports_Active->path_ttyACM);
-                    for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
-                        Print_Mode = SHOW_DUMP_MODE;
-                        Queue_Push(&Queue_dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
-                    }
-                
-                }
-            }  
+            sleep(1);
+            
         }
- 
-        memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
-        memset(&AVE_Data_Rx, 0x00, sizeof(AVE_Data_Rx));
+
+
     }
 
     return 0;
@@ -339,61 +331,61 @@ void* thread_cdc_generic(void* arg)
 /// @brief Поток вывода в консоль информации 
 /// @param arg - NULL
 /// @return - NON RETURN    
-// void* thread_display(void* arg)
-// {
-//     //ModulData_t* ModulDatPrintDump = (ModulData_t*)calloc( TAKE_HEAP_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t) );
+void* thread_display(void* arg)
+{
+    ModulData_t* ModulDatPrintDump = (ModulData_t*)calloc( TAKE_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t) );
 
     
 
-//     uint32_t index_count = 0;
-//     printf("Вход в поток вывода информации\n");
-//     while(1)
-//     {
+    uint32_t index_count = 0;
+    printf("Вход в поток вывода информации\n");
+    while(1)
+    {
         
         
-//         ModulData_t ModulDataPrintAVE;
-//         switch (Print_Mode)
-//         {
-//         case SHOW_NONE:{
-//             usleep(100000);
-//             break;
-//         }
-//         case SHOW_AVE_MODE:{
+        ModulData_t ModulDataPrintAVE;
+        switch (Print_Mode)
+        {
+        case SHOW_NONE:{
+            usleep(100000);
+            break;
+        }
+        case SHOW_AVE_MODE:{
 
-//             int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
-//             logger_print_one_frame(&ModulDataPrintAVE, index_count);
-//             if (index_count < UINT32_MAX) {
-//                 index_count++;
-//             } else {
-//                 index_count = 0;
-//             }
+            int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
+            logger_print_one_frame(&ModulDataPrintAVE, index_count);
+            if (index_count < UINT32_MAX) {
+                index_count++;
+            } else {
+                index_count = 0;
+            }
 
-//             Print_Mode = SHOW_NONE;
-//             break;
-//         }
+            Print_Mode = SHOW_NONE;
+            break;
+        }
         
-//         case SHOW_DUMP_MODE:{
+        case SHOW_DUMP_MODE:{
 
-//             int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
-//             printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
-//             for(uint32_t i = 0; i < count_data; i++)
-//             {
-//                 if(ModulDatPrintDump[i].packet.alarms.raw != 0){
-//                     logger_print_one_frame(&ModulDataPrintAVE, i);
-//                 }
-//             }
-//             Print_Mode = SHOW_NONE;
-//             break;
+            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
+            printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
+            for(uint32_t i = 0; i < count_data; i++)
+            {
+                if(ModulDatPrintDump[i].packet.alarms.raw != 0){
+                    logger_print_one_frame(&ModulDataPrintAVE, i);
+                }
+            }
+            Print_Mode = SHOW_NONE;
+            break;
 
-//         }
+        }
             
-//         default:
-//         sleep(2);
-//             break;
-//         }
+        default:
+        sleep(2);
+            break;
+        }
 
-//     }
-// }
+    }
+}
 
 
 void* thread_filesystem(void* arg)

@@ -106,6 +106,8 @@ int main(int argc, char * argv[])
         return EXIT_FAILURE;
     }
 
+    USB_Buffers_Init();
+
     int result;
 
     result = pthread_create(&pthread_hotpug_connect, NULL, thread_hotpug_connect, NULL);
@@ -122,12 +124,12 @@ int main(int argc, char * argv[])
     }
     printf("Поток прёма данных создан\n");
 
-    // result = pthread_create(&pthread_display, NULL, thread_display , NULL);
-    // if (result != 0) {
-    // fprintf(stderr,"Не удалось создать поток: display\n");
-    // return EXIT_FAILURE;
-    // }
-    // printf("Поток вывода информации созадн\n");
+    result = pthread_create(&pthread_display, NULL, thread_display , NULL);
+    if (result != 0) {
+    fprintf(stderr,"Не удалось создать поток: display\n");
+    return EXIT_FAILURE;
+    }
+    printf("Поток вывода информации созадн\n");
 
     // result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
     // if (result != 0) {
