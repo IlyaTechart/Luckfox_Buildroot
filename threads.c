@@ -240,7 +240,7 @@ void* thread_cdc_generic(void* arg)
     uint32_t ret = 0;
 
     for(uint8_t i = 0; i < Thread_CDC_Device->TotalNumberOfDevice; i++){
-        ret = USB_Com_Init(&Thread_CDC_Device->COM_Ports_Handle[i]);
+        ret = USB_Add_New_Device(&Thread_CDC_Device->COM_Ports_Handle[i]);
         if(ret != 0){
             perror("Ошибка: USB_Com_Init - не инициализировался успешно");//TODO
             exit(EXIT_FAILURE);

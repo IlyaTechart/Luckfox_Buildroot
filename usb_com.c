@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 199309L
 #include "usb_com.h"
 #include <time.h>
-
+#include "epoll.h"
 
 COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
 
@@ -10,7 +10,7 @@ COM_Ports_Handle_t COM_Ports_Handle[24] = {0};
 /// @brief 
 /// @param COM_Port 
 /// @return 
-uint32_t USB_Com_Init(COM_Ports_Handle_t* COM_Port)
+uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 {
 
     int LenPath = strlen(COM_Port->path_ttyACM);
@@ -58,6 +58,38 @@ uint32_t USB_Com_Init(COM_Ports_Handle_t* COM_Port)
     return 0;
 
 }
+
+/// @brief Удаляет девайс из глобального массива 
+/// @param PathDevice Путь удаляемого устройства 
+/// @param len Длина пути 
+/// @param Thread_CDC_Device Указатель на глобальную структуру с устройствами 
+/// @return 
+uint32_t USB_Remove_Device(char *PathDevice, uint8_t len, Thread_CDC_Device_t *Thread_CDC_Device)
+{
+
+    uint8_t HowMuchDev = Thread_CDC_Device->TotalNumberOfDevice;
+    char path[256];
+
+    for(uint8_t i = 0; i < HowMuchDev; i++)
+    {
+        COM_Ports_Handle_t* COM_Port = &Thread_CDC_Device->COM_Ports_Handle[i];
+
+        memcpy( path, COM_Port->path_ttyACM, strlen(COM_Port->path_ttyACM));
+
+
+        if(strncmp(PathDevice, path, len) == 0 )
+        {
+            Epoll_Delete(COM_Port);
+            close(COM_Port->File_Descriptor);
+            memset( COM_Port, 0x00, sizeof(COM_Ports_Handle_t) );
+            return 0;  
+        }
+    }
+
+    return -1;
+
+}
+
 /// @brief Основная функция чтания данных из COM порта 
 /// @param COMPort Структура на читаемое устройсвто 
 /// @param buffer Указатель на буфер куда будут записаны данные с читаемого устройства 
