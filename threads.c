@@ -309,9 +309,9 @@ void* thread_cdc_generic(void* arg)
                     if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_DUMP)
                     {
                         printf("Устройство %s передало правильный tail\n", Monitor_Msg[i].NameDev);
-                        for(uint32_t i = 0; i < DumpData_Rx.count_elements; i++){
+                        for(uint32_t t = 0; t < DumpData_Rx.count_elements; t++){
                             Print_Mode = SHOW_DUMP_MODE;
-                            Queue_Push(&Queue_dump, &DumpData_Rx.buffer[i], QUEUE_WAIT_STATE);
+                            Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE);
                         }
 
                     }
@@ -353,7 +353,7 @@ void* thread_display(void* arg)
         case SHOW_AVE_MODE:{
 
             int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
-            logger_print_one_frame(&ModulDataPrintAVE, index_count);
+            logger_print_one_frame(&ModulDataPrintAVE, index_count, LOG_COLOR_DEFAULT);
             if (index_count < UINT32_MAX) {
                 index_count++;
             } else {
@@ -371,7 +371,7 @@ void* thread_display(void* arg)
             for(uint32_t i = 0; i < count_data; i++)
             {
                 if(ModulDatPrintDump[i].packet.alarms.raw != 0){
-                    logger_print_one_frame(&ModulDataPrintAVE, i);
+                    logger_print_one_frame(&ModulDataPrintAVE, i, LOG_COLOR_RED);
                 }
             }
             Print_Mode = SHOW_NONE;

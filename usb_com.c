@@ -263,7 +263,7 @@ void Receive_msg(int nfds, Monitor_Msg_t *Monitor_Debug)
         Monitor_Debug[i].ID_Dev_Who_From = COM_Ports_Active->Device_ID;
         memcpy(&Monitor_Debug[i].NameDev, &COM_Ports_Active->path_ttyACM, 20);
 
-        memset(&DumpData_Rx, 0x00, sizeof(DumpData_Rx));
+        memset(DumpData_Rx.buffer, 0x00, TAKE_MEMORY_FOR_ELEMENTS * sizeof(ModulData_t));
 
         ReadDataState_t KindOfHead;
         if(events[i].events & EPOLLIN){

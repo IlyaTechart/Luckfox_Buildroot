@@ -25,13 +25,22 @@
 
 
 
+typedef enum {
+    LOG_COLOR_DEFAULT = 0,
+    LOG_COLOR_RED,
+    LOG_COLOR_GREEN,
+    LOG_COLOR_YELLOW,
+    LOG_COLOR_BLUE,
+    LOG_COLOR_MAGENTA,
+    LOG_COLOR_CYAN,
+    LOG_COLOR_WHITE
+} logger_color_t;
 
 
 
 
 
 
-
-void logger_print_one_frame(const ModulData_t *m, size_t frame_index);
+void logger_print_one_frame(const ModulData_t *m, size_t frame_index, logger_color_t color);
 
 

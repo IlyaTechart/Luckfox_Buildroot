@@ -4,8 +4,27 @@
 
 
 
-void logger_print_one_frame(const ModulData_t *m, size_t frame_index)
+void logger_print_one_frame(const ModulData_t *m, size_t frame_index, logger_color_t color)
 {
+
+       // Таблица соответствия цвет → ANSI-код
+    static const char* ansi_colors[] = {
+        "",           // LOG_COLOR_DEFAULT — не меняем
+        "\033[31m",   // LOG_COLOR_RED
+        "\033[32m",   // LOG_COLOR_GREEN
+        "\033[33m",   // LOG_COLOR_YELLOW
+        "\033[34m",   // LOG_COLOR_BLUE
+        "\033[35m",   // LOG_COLOR_MAGENTA
+        "\033[36m",   // LOG_COLOR_CYAN
+        "\033[37m",   // LOG_COLOR_WHITE
+    };
+
+    // Устанавливаем цвет, если не default
+    if (color != LOG_COLOR_DEFAULT) {
+        printf("%s", ansi_colors[color]);
+    }
+
+
     const FpgaToEspPacket_t *p = &m->packet;
 
     printf("\n========== frame #%zu ==========\n", frame_index);
@@ -62,5 +81,8 @@ void logger_print_one_frame(const ModulData_t *m, size_t frame_index)
 
     printf("crc32:          0x%08" PRIx32 "\n", p->crc32);
     printf("system_time_ms: %" PRIu32 "\n", p->system_time_ms);
+
+
+    printf("\033[0m"); // Возврат в исходный цвет 
 
 }
