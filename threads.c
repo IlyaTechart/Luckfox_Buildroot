@@ -282,11 +282,9 @@ void* thread_cdc_generic(void* arg)
             } 
             else if (msg.action == USB_ACTION_REMOVE) {
                 printf("[READER] Получил команду удалить %s\n", msg.device_path);
-                
-                // 1. Ищем в вашем массиве COM_Ports_Handle устройство с таким именем
-                // 2. Делаем epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-                // 3. close(fd);
-                // 4. Помечаем порт как свободный
+                int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);
+                Epoll_Delete(&COM_Ports_Handle[Number]);
+                USB_Remove_Device(&COM_Ports_Handle[Number], &Thread_CDC_Device);
             }
             continue; // Обработали трубу, идем к следующему событию
 
@@ -346,10 +344,6 @@ void* thread_display(void* arg)
         ModulData_t ModulDataPrintAVE;
         switch (Print_Mode)
         {
-        case SHOW_NONE:{
-            usleep(100000);
-            break;
-        }
         case SHOW_AVE_MODE:{
 
             int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);

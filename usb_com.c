@@ -55,11 +55,13 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
         return 1;
     }
 
-    if(tcgetattr(COM_Port->File_Descriptor, &COM_Port->tty ) != 0)
+    if(tcgetattr(COM_Port->File_Descriptor, &COM_Port->old_tty ) != 0)
     {
         printf("Ошибка: не удлось прочитать текущие настройки порта для: %s \n", path_ttyACM);
         return 1;
     }
+
+    memcpy(&COM_Port->tty, &COM_Port->old_tty, sizeof(struct termios));
                                                                         // Включаем АБСОЛЮТНЫЙ RAW-режим одной строчкой!
     cfmakeraw(&COM_Port->tty);
 
@@ -87,37 +89,6 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 
 
     return 0;
-
-}
-
-/// @brief Удаляет девайс из глобального массива 
-/// @param PathDevice Путь удаляемого устройства 
-/// @param len Длина пути 
-/// @param Thread_CDC_Device Указатель на глобальную структуру с устройствами 
-/// @return 
-uint32_t USB_Remove_Device(char *PathDevice, uint8_t len, Thread_CDC_Device_t *Thread_CDC_Device)
-{
-
-    uint8_t HowMuchDev = Thread_CDC_Device->CurrentNum_Device;
-    char path[256];
-
-    for(uint8_t i = 0; i < HowMuchDev; i++)
-    {
-        COM_Ports_Handle_t* COM_Port = &Thread_CDC_Device->COM_Ports_Handle[i];
-
-        memcpy( path, COM_Port->path_ttyACM, strlen(COM_Port->path_ttyACM));
-
-        if(strncmp(PathDevice, path, len) == 0 )
-        {
-            Epoll_Delete(COM_Port);
-            close(COM_Port->File_Descriptor);
-            memset( COM_Port, 0x00, sizeof(COM_Ports_Handle_t) );
-            Thread_CDC_Device->CurrentNum_Device -= 1;
-            return 0;  
-        }
-    }
-
-    return -1;
 
 }
 
@@ -220,11 +191,39 @@ int USB_Finde_Device_Of_Path(char *path, COM_Ports_Handle_t* COMPort)
 
 }
 
-
-
-void USB_Com_DeInit(int File_Descriptor, uint8_t NumberDevice)
+/// @brief Закрывает устройство и восстанавливает исходные настройки терминала.
+/// @param COM_Port Указатель на структуру устройства.
+/// @param Thread_Devices Указатель на глобальную структуру с устройствами.
+/// @return 0 при успехе, иначе -1.
+int USB_Remove_Device(COM_Ports_Handle_t* COM_Port, Thread_CDC_Device_t* Thread_Devices)
 {
-    close(File_Descriptor);
+    if (COM_Port == NULL || !COM_Port->active) {
+        return -1;
+    }
+
+    if(Thread_Devices->CurrentNum_Device == 0){
+        return -1;
+    }
+
+    // 1. Восстанавливаем оригинальные настройки (сбрасываем буферы)
+    if (tcsetattr(COM_Port->File_Descriptor, TCSAFLUSH, &COM_Port->old_tty) != 0) {
+        perror("tcsetattr восстановление");
+        // Ошибка не фатальна, продолжаем закрывать
+    }
+
+    // 2. Закрываем дескриптор
+    if (close(COM_Port->File_Descriptor) != 0) {
+        perror("close");
+        return -1;
+    }
+
+    // 3. Обнуляем состояние
+    memset(COM_Port, 0x00, sizeof(COM_Ports_Handle_t));
+
+    Thread_Devices->CurrentNum_Device -= 1;
+
+    printf("Порт %s закрыт и настройки восстановлены.\n", COM_Port->path_ttyACM);
+    return 0;
 }
 
 /// @brief Читает Head индивидульный фрейма 
