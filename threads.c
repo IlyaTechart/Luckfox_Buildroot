@@ -270,19 +270,19 @@ void* thread_cdc_generic(void* arg)
             if (msg.action == USB_ACTION_ADD) {
                 printf("[READER] Получил команду добавить %s\n", msg.device_path);
                 
-                // 1. Делаем open() для нового "/dev/ttyACM..."
-                // 2. Настраиваем Baudrate (ваш USB_Com_Init)
-                // 3. Получаем новый File_Descriptor для этого USB
-                // 4. ДОБАВЛЯЕМ ЕГО В EPOLL:
-                /*
-                struct epoll_event new_usb_ev;
-                new_usb_ev.events = EPOLLIN;
-                new_usb_ev.data.ptr = Pointer_to_your_COM_Handle; // Как в вашем старом коде
-                epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_usb_fd, &new_usb_ev);
-                */
+                int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
+                if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
+                    printf("strlen не смог найти терминальный ноль");
+                    continue;
+                }
+                memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
+                USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
+                Epoll_Add_Device(&COM_Ports_Handle[FreeDev]);
+                 
             } 
             else if (msg.action == USB_ACTION_REMOVE) {
                 printf("[READER] Получил команду удалить %s\n", msg.device_path);
+                
                 // 1. Ищем в вашем массиве COM_Ports_Handle устройство с таким именем
                 // 2. Делаем epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
                 // 3. close(fd);
@@ -366,7 +366,7 @@ void* thread_display(void* arg)
         
         case SHOW_DUMP_MODE:{
 
-            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
+            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
             printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
             for(uint32_t i = 0; i < count_data; i++)
             {

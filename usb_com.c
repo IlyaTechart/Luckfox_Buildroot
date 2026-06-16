@@ -30,9 +30,9 @@ void USB_Buffers_Init(void)
 
 }
 
-/// @brief 
-/// @param COM_Port 
-/// @return 
+/// @brief Добавляет новое USB CDC устройство в массив списка COM_Ports_Handle, инициализирует COM порт, утсанавливает скрость работы. 
+/// @param COM_Port Указатель на экземпляр списка который будет применяться для работы с устройством. В экземпляре должен быть путь к устройству ttyACM*.
+/// @return Возвращает 0 при успешной инциализации. 
 uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 {
 
@@ -165,6 +165,61 @@ int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes,
     }
     return count_bytse;
 }
+
+
+/// @brief Функция ищет в массиве списков неактивный (свободный) список 
+/// @param COMPort Принимает ТОЛЬКО НУЛЕВОЙ эллемент списка.
+/// @return 
+int USB_Finde_Free_Device(COM_Ports_Handle_t* COMPort)
+{
+    int NumberFreeDev = -1;
+    uint8_t cnt = 0;
+
+    if(COMPort != COM_Ports_Handle)
+    {
+        return -2;
+    }
+
+    while(cnt < SUPPORT_NUMBER_DEVICE_USB)
+    {
+        if( COMPort[NumberFreeDev].active == false )
+        {
+            return NumberFreeDev;
+        }
+
+        NumberFreeDev = (NumberFreeDev + 1) % SUPPORT_NUMBER_DEVICE_USB;
+        cnt++;
+    }
+
+    return NumberFreeDev;
+}
+
+/// @brief Ищет устройство в массиве списка по пути.
+/// @param path Путь искомого устройства. 
+/// @param COMPort Глобальный массив списков.
+/// @return Вернёт n списка в массиве, в противном случае вернёт -1.
+int USB_Finde_Device_Of_Path(char *path, COM_Ports_Handle_t* COMPort)
+{
+    if (path == NULL || COMPort == NULL) {
+        return -2;
+    }
+
+    
+    if (path[0] == '\0') {
+        return -2;
+    }
+    for(uint16_t i = 0; i < SUPPORT_NUMBER_DEVICE_USB; i++ )
+    {
+        if(strncmp(path, COMPort[i].path_ttyACM, strlen(path)) == 0)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+
+}
+
 
 
 void USB_Com_DeInit(int File_Descriptor, uint8_t NumberDevice)

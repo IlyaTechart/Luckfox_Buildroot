@@ -13,8 +13,8 @@
 
 
 #define SUPPORT_NUMBER_DEVICE_USB 24
-#define NUMBER_ELLEMENTS_RECESIVE 10000
-#define TAKE_MEMORY_FOR_ELEMENTS  10000
+#define NUMBER_ELLEMENTS_RECESIVE 1000
+#define TAKE_MEMORY_FOR_ELEMENTS  1000
 
 #if NUMBER_ELLEMENTS_RECESIVE > TAKE_MEMORY_FOR_ELEMENTS
 #error "The number TAKE_MEMORY_FOR_ELEMENTS must be greater than the NUMBER_ELLEMENTS_RECESIVE."
@@ -89,6 +89,9 @@ COM_Ports_Handle_t COM_Ports_Handle[SUPPORT_NUMBER_DEVICE_USB];
 void USB_Buffers_Init(void);
 uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port);
 int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size, uint32_t Timeout);
+int USB_Finde_Free_Device(COM_Ports_Handle_t* COMPort);
+int USB_Finde_Device_Of_Path(char *path, COM_Ports_Handle_t* COMPort);
+void USB_Com_DeInit(int File_Descriptor, uint8_t NumberDevice);
 ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head);
 int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
 int Read_Data_Payload(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx);

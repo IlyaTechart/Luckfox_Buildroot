@@ -1,7 +1,7 @@
 #include "epoll.h"
 
 
-static int epoll_fd = 0;
+static int epoll_fd = 0; 
 struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
 
 void Epoll_Add_InitUSB(Thread_CDC_Device_t* Thread_CDC_Device)
