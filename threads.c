@@ -211,18 +211,31 @@ void* thread_hotpug_connect(void* arg)
             {
                 msg.action = USB_ACTION_ADD;
                 printf("[HOTPLUG] Подключено устройство: %s. Отправляем команду в Конвейер.\n", msg.device_path);
+
+                int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
+                if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
+                    printf("strlen не смог найти терминальный ноль");
+                    continue;
+                }
+                memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
+                USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
+                Epoll_Add_Device(&COM_Ports_Handle[FreeDev]);
                 
                 // Кидаем записку в нашу "трубу" для epoll-потока
-                write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
+                //write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
             } 
             // Если кабель выдернули
             else if (action && strcmp(action, "remove") == 0) 
             {
                 msg.action = USB_ACTION_REMOVE;
                 printf("[HOTPLUG] Отключено устройство: %s. Отправляем команду в Конвейер.\n", msg.device_path);
+
+                int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);
+                Epoll_Delete(&COM_Ports_Handle[Number]);
+                USB_Remove_Device(&COM_Ports_Handle[Number], &Thread_CDC_Device);
                 
                 // Кидаем записку в нашу "трубу"
-                write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
+               // write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
             }
         }
     }
@@ -264,28 +277,28 @@ void* thread_cdc_generic(void* arg)
 
         if(events[0].data.fd == hotplug_pipe[0])
         {
-            HotplugMsg_t msg;
-            read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
+            // HotplugMsg_t msg;
+            // read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
 
-            if (msg.action == USB_ACTION_ADD) {
-                printf("[READER] Получил команду добавить %s\n", msg.device_path);
+            // if (msg.action == USB_ACTION_ADD) {
+            //     printf("[READER] Получил команду добавить %s\n", msg.device_path);
                 
-                int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
-                if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
-                    printf("strlen не смог найти терминальный ноль");
-                    continue;
-                }
-                memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
-                USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
-                Epoll_Add_Device(&COM_Ports_Handle[FreeDev]);
+            //     int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
+            //     if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
+            //         printf("strlen не смог найти терминальный ноль");
+            //         continue;
+            //     }
+            //     memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
+            //     USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
+            //     Epoll_Add_Device(&COM_Ports_Handle[FreeDev]);
                  
-            } 
-            else if (msg.action == USB_ACTION_REMOVE) {
-                printf("[READER] Получил команду удалить %s\n", msg.device_path);
-                int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);
-                Epoll_Delete(&COM_Ports_Handle[Number]);
-                USB_Remove_Device(&COM_Ports_Handle[Number], &Thread_CDC_Device);
-            }
+            // } 
+            // else if (msg.action == USB_ACTION_REMOVE) {
+            //     printf("[READER] Получил команду удалить %s\n", msg.device_path);
+            //     int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);
+            //     Epoll_Delete(&COM_Ports_Handle[Number]);
+            //     USB_Remove_Device(&COM_Ports_Handle[Number], Thread_CDC_Device);
+            // }
             continue; // Обработали трубу, идем к следующему событию
 
         }else{
@@ -374,7 +387,6 @@ void* thread_display(void* arg)
         }
             
         default:
-        sleep(2);
             break;
         }
 

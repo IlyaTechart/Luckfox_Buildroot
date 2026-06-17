@@ -126,6 +126,8 @@ int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes,
             perror("Ошибка функции read(): не прочитала файл\n"); 
             return USB_ERR;
         }else if(num_bytes_rx == 0){
+//            Epoll_Delete(COMPort);
+//            USB_Remove_Device(COMPort, &Thread_CDC_Device);                                  // Здесь по идее не должно быть функций Epoll_Delete и USB_Remove_Device. Отключение во время чтеняи надо обрабатывать в отдельном потоке, а здесь проврерять по флагу.
             printf("Устройство %s отключено, ожидание тайм-аута\n", COMPort->path_ttyACM);
             return USB_ERR;
         }else if(num_bytes_rx > 0){
@@ -143,7 +145,7 @@ int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes,
 /// @return 
 int USB_Finde_Free_Device(COM_Ports_Handle_t* COMPort)
 {
-    int NumberFreeDev = -1;
+    int NumberFreeDev = 0;
     uint8_t cnt = 0;
 
     if(COMPort != COM_Ports_Handle)
@@ -162,7 +164,7 @@ int USB_Finde_Free_Device(COM_Ports_Handle_t* COMPort)
         cnt++;
     }
 
-    return NumberFreeDev;
+    return -1;
 }
 
 /// @brief Ищет устройство в массиве списка по пути.
@@ -206,10 +208,10 @@ int USB_Remove_Device(COM_Ports_Handle_t* COM_Port, Thread_CDC_Device_t* Thread_
     }
 
     // 1. Восстанавливаем оригинальные настройки (сбрасываем буферы)
-    if (tcsetattr(COM_Port->File_Descriptor, TCSAFLUSH, &COM_Port->old_tty) != 0) {
-        perror("tcsetattr восстановление");
-        // Ошибка не фатальна, продолжаем закрывать
-    }
+    // if (tcsetattr(COM_Port->File_Descriptor, TCSAFLUSH, &COM_Port->old_tty) != 0) {
+    //     perror("tcsetattr восстановление");
+    //     // Ошибка не фатальна, продолжаем закрывать
+    // }
 
     // 2. Закрываем дескриптор
     if (close(COM_Port->File_Descriptor) != 0) {
@@ -222,7 +224,7 @@ int USB_Remove_Device(COM_Ports_Handle_t* COM_Port, Thread_CDC_Device_t* Thread_
 
     Thread_Devices->CurrentNum_Device -= 1;
 
-    printf("Порт %s закрыт и настройки восстановлены.\n", COM_Port->path_ttyACM);
+    printf("Порт %s закрыт.\n", COM_Port->path_ttyACM);
     return 0;
 }
 
