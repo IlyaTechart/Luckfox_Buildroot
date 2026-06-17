@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 199309L
 #include "usb_com.h"
 #include <time.h>
-#include "epoll.h"
+
 
 
 
@@ -85,6 +85,9 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
     Thread_CDC_Device.CurrentNum_Device += 1;
     COM_Port->active = true;
     COM_Port->Device_ID = ID_dev;
+    COM_Port->Epoll_User_Data.type = EPOLL_SOURCE_USB_CDC;
+    COM_Port->Epoll_User_Data.fd = COM_Port->File_Descriptor;
+    
     if(ID_dev != UINT16_MAX){ ID_dev++; }else{ ID_dev = 0; }
 
 

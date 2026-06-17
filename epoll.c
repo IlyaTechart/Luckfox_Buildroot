@@ -1,69 +1,109 @@
 #include "epoll.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
 
+// Скрытая реализация контекста
+struct Epoll_Context {
+    int epoll_fd;        // Системный дескриптор epoll
+    uint32_t max_events; // Максимальное количество событий
+};
 
-static int epoll_fd = 0; 
-struct epoll_event events[SUPPORT_NUMBER_DEVICE_USB]; // TODO (переделать на задаваемый пользователем параметр)
-
-void Epoll_Add_InitUSB(Thread_CDC_Device_t* Thread_CDC_Device)
+Epoll_Context_t* Epoll_Create(uint32_t max_events) 
 {
-
-    epoll_fd = epoll_create1(0);
-    if (epoll_fd == -1) {
-        perror("Ошибка: epoll_create1");
-        exit(EXIT_FAILURE);
+    Epoll_Context_t* ctx = (Epoll_Context_t*)malloc(sizeof(Epoll_Context_t));
+    if (!ctx) {
+        perror("Epoll_Create: malloc failed");
+        return NULL;
     }
 
-    struct epoll_event event;
+    // Создаем системный epoll
+    ctx->epoll_fd = epoll_create1(0);
+    if (ctx->epoll_fd == -1) {
+        perror("Epoll_Create: epoll_create1 failed");
+        free(ctx);
+        return NULL;
+    }
 
-    for(uint16_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++ )
-    {
-        if(Thread_CDC_Device->COM_Ports_Handle[i].File_Descriptor < 0){
+    ctx->max_events = max_events;
+    return ctx;
+}
 
-            continue;
+void Epoll_Destroy(Epoll_Context_t* ctx) 
+{
+    if (ctx) {
+        if (ctx->epoll_fd >= 0) {
+            close(ctx->epoll_fd);
         }
-        event.events = EPOLLIN;
-        event.data.ptr = &Thread_CDC_Device->COM_Ports_Handle[i];
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, Thread_CDC_Device->COM_Ports_Handle[i].File_Descriptor, &event) == -1) {
-            fprintf(stderr,"Ошибка: epoll_ctl не добалвен для устройсва с ID %d", Thread_CDC_Device->COM_Ports_Handle[i].Device_ID);
-        }
+        free(ctx);
     }
 }
 
-int Epoll_Wait(void)
+int Epoll_Add(Epoll_Context_t* ctx, int fd, uint32_t events_mask, void* user_data) 
 {
-        int nfds = epoll_wait(epoll_fd, events, SUPPORT_NUMBER_DEVICE_USB, -1);
-        if (nfds == -1) {
-            if (errno == EINTR) {
-                // Вызов прерван сигналом (например, отладчиком GDB).
-                // Это нормально, просто игнорируем и ждем данные дальше.
-                return -2;
-            }
-            perror("Ошибка: epoll_wait\n");
-            return -1;
-        }
+    if (!ctx || fd < 0) return -1;
 
+    struct epoll_event event = {0};
+    event.events = events_mask;
+    event.data.ptr = user_data; // Сохраняем пользовательский указатель
+
+    if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1) {
+        perror("Epoll_Add: epoll_ctl failed");
+        return -1;
+    }
+    
+    return 0;
+}
+
+int Epoll_Modify(Epoll_Context_t* ctx, int fd, uint32_t events_mask, void* user_data) 
+{
+    if (!ctx || fd < 0) return -1;
+
+    struct epoll_event event = {0};
+    event.events = events_mask;
+    event.data.ptr = user_data;
+
+    if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1) {
+        perror("Epoll_Modify: epoll_ctl failed");
+        return -1;
+    }
+    
+    return 0;
+}
+
+int Epoll_Remove(Epoll_Context_t* ctx, int fd) 
+{
+    if (!ctx || fd < 0) return -1;
+
+    // В ядре 2.6.9+ параметр event может быть NULL для EPOLL_CTL_DEL
+    if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
+        // Ошибка EBADF возникает, если fd уже был закрыт функцией close() до вызова Epoll_Remove.
+        // Ошибка ENOENT возникает, если fd не был добавлен в этот epoll_fd.
+        // Это не всегда критично, но может указывать на логические проблемы.
+        if (errno != EBADF && errno != ENOENT) {
+            perror("Epoll_Remove: epoll_ctl failed");
+        }
+        return -1;
+    }
+    
+    return 0;
+}
+
+int Epoll_Wait(Epoll_Context_t* ctx, struct epoll_event* events_array, int maxevents, int timeout_ms) 
+{
+    if (!ctx || !events_array || maxevents <= 0) return -1;
+
+    int nfds = epoll_wait(ctx->epoll_fd, events_array, maxevents, timeout_ms);
+    if (nfds == -1) {
+        if (errno == EINTR) {
+            // Вызов прерван системным сигналом (например, отладчиком).
+            // Это нормальная ситуация, просто возвращаем 0 событий.
+            return 0;
+        }
+        perror("Epoll_Wait: epoll_wait failed");
+        return -1;
+    }
+    
     return nfds;
-}
-
-void Epoll_Add_Device(COM_Ports_Handle_t* COM_Ports_Active)
-{
-    struct epoll_event event;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, COM_Ports_Handle->File_Descriptor, &event) == -1) {
-        fprintf(stderr,"Ошибка: epoll_ctl не добалвен для устройсва с номером %d", COM_Ports_Handle->File_Descriptor);
-    }
-    printf("Устройство %s было добавлено в epoll\n", COM_Ports_Active->path_ttyACM);
-}
-
-void Epoll_Delete(COM_Ports_Handle_t* COM_Ports_Active)
-{
-    printf("Устройство %s было удаленоиз epoll\n", COM_Ports_Active->path_ttyACM);
-    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, COM_Ports_Active->File_Descriptor, NULL);
-}
-
-void Epoll_Add_Pipe(int *fd)
-{
-    struct epoll_event event;
-    event.events = EPOLLIN;
-    event.data.fd = *fd;
-    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, *fd, &event);
 }

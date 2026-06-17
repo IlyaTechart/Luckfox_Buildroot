@@ -18,6 +18,7 @@
 
 
 #define SIZE_QUEUE_DISPLAY_ELEMENTS 20
+#define NUMBERS_EVENTS_PIPE 2
 
 
 /// @brief "Труба" для передачи 
@@ -73,8 +74,11 @@ typedef struct{
 
 
 
+
+
+pthread_t pthread_kernel_events;
+pthread_t pthread_heandler_karnel_event;
 pthread_t pthread_cdc_generic;
-pthread_t pthread_hotpug_connect;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
 extern Queue_Handle_t Queue;
@@ -86,7 +90,8 @@ extern Queue_Handle_t Queue;
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
 void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode);
 int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode);
-void* thread_hotpug_connect(void* arg);
+void* thread_kernel_events(void* arg);
+void* thread_heandler_karnel_event(void* arg);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);
 void* thread_filesystem(void* arg);

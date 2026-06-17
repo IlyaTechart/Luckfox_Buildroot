@@ -8,7 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <termios.h>
-#include <sys/epoll.h>
+#include "epoll.h"
 #include "frames_structure.h"
 
 
@@ -47,7 +47,7 @@ typedef struct {
 
     bool active;            // Состояния устройства 
     uint16_t Device_ID;
-    char* name_device[20];  //reseved
+    Epoll_User_Data_t Epoll_User_Data;
 
     char* path_dump_file[50]; // Для работы с дампом и записью в файловую систему
     FILE* file_dump;

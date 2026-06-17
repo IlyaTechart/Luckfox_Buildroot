@@ -9,9 +9,9 @@
 #include <mqueue.h>
 #include <time.h>
 #include <glob.h>
-#include <sys/epoll.h>
 #include "threads.h"
 #include "usb_com.h"
+#include "epoll.h"
 
 
 
@@ -101,35 +101,56 @@ int main(int argc, char * argv[])
         return EXIT_FAILURE; // Завершаем программу, если логгер не подключен
     }
 
-    if (pipe(hotplug_pipe) == -1) {
+    if (pipe(hotplug_pipe) == -1) {    // Делайет 2 фаловых дискриптора из массива hotplug_pipe[0] — дескриптор для чтения, hotplug_pipe[1] — дескриптор для записи
         perror("Ошибка создания pipe");
         return EXIT_FAILURE;
     }
 
+    Epoll_User_Data_t pipe_epoll_data = {
+    .type = EPOLL_SOURCE_HOTPLUG_PIPE,
+    .fd = hotplug_pipe[0],
+    .custom_data = NULL
+    };
+    Epoll_Context_t* Epoll_Context_Pipe = Epoll_Create(NUMBERS_EVENTS_PIPE);
+    if(Epoll_Add(Epoll_Context_Pipe, hotplug_pipe[0], EPOLLIN, &pipe_epoll_data) != 0)
+    {
+        printf("Pipe не был добавлен в epoll\n");
+    }
+
+
     USB_Buffers_Init();
+
+
 
     int result;
 
-    result = pthread_create(&pthread_hotpug_connect, NULL, thread_hotpug_connect, NULL);
+    result = pthread_create(&pthread_kernel_events, NULL, thread_kernel_events, NULL);
     if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток: hotpug_connect\n");
+    fprintf(stderr,"Не удалось создать поток: kernel_events\n");
     return EXIT_FAILURE;
     }
-    printf("Поток горячего подключения устройств USB создан\n");
+    printf("Поток kernel_events создан\n");
+
+    result = pthread_create(&pthread_heandler_karnel_event, NULL, thread_heandler_karnel_event, Epoll_Context_Pipe);
+    if (result != 0) {
+    fprintf(stderr,"Не удалось создать поток: heandler_karnel_event\n");
+    return EXIT_FAILURE;
+    }
+    printf("Поток heandler_karnel_event создан\n");
 
     result = pthread_create(&pthread_cdc_generic, NULL, thread_cdc_generic , &Thread_CDC_Device);
     if (result != 0) {
     fprintf(stderr,"Не удалось создать поток: generic\n");
     return EXIT_FAILURE;
     }
-    printf("Поток прёма данных создан\n");
+    printf("Поток cdc_generic создан\n");
 
     result = pthread_create(&pthread_display, NULL, thread_display , NULL);
     if (result != 0) {
     fprintf(stderr,"Не удалось создать поток: display\n");
     return EXIT_FAILURE;
     }
-    printf("Поток вывода информации созадн\n");
+    printf("Поток display созадн\n");
 
     // result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
     // if (result != 0) {

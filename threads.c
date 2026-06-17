@@ -7,6 +7,8 @@
 
 
 /// @brief Привязанные структуры к их потокам 
+pthread_t pthread_kernel_events;
+pthread_t pthread_heandler_karnel_event;
 pthread_t pthread_cdc_generic;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
@@ -133,27 +135,12 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     return count_copyed_frame;
 }
 
-void* thread_hotpug_connect(void* arg)
+void* thread_kernel_events(void* arg)
 {
     int fd;
-    struct sockaddr_nl addr;
+    Socket_Netlink_Init(&fd);
 
-    fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_KOBJECT_UEVENT);
-    if (fd < 0)
-    { 
-        perror("Ошибка создания сокета Netlink"); 
-        return NULL; 
-    }
 
-    memset(&addr, 0, sizeof(addr));
-    addr.nl_family = AF_NETLINK;
-    addr.nl_pid = getpid();
-    addr.nl_groups = 1;
-    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) 
-    { 
-        perror("Ошибка bind Netlink"); 
-        return NULL; 
-    }
     
     Epoll_Add_Pipe(hotplug_pipe);
 
@@ -218,11 +205,9 @@ void* thread_hotpug_connect(void* arg)
                     continue;
                 }
                 memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
-                USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
-                Epoll_Add_Device(&COM_Ports_Handle[FreeDev]);
                 
                 // Кидаем записку в нашу "трубу" для epoll-потока
-                //write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
+                write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
             } 
             // Если кабель выдернули
             else if (action && strcmp(action, "remove") == 0) 
@@ -231,11 +216,9 @@ void* thread_hotpug_connect(void* arg)
                 printf("[HOTPLUG] Отключено устройство: %s. Отправляем команду в Конвейер.\n", msg.device_path);
 
                 int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);
-                Epoll_Delete(&COM_Ports_Handle[Number]);
-                USB_Remove_Device(&COM_Ports_Handle[Number], &Thread_CDC_Device);
                 
                 // Кидаем записку в нашу "трубу"
-               // write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
+                write(hotplug_pipe[1], &msg, sizeof(HotplugMsg_t));
             }
         }
     }
@@ -243,39 +226,18 @@ void* thread_hotpug_connect(void* arg)
     return NULL;
 }
 
-
-
-/// @brief Поток осуществяет приём статических данных с логера, а так же прём дампов.
-/// @param arg Указатель на струтуру типа Thread_CDC_Device*
-/// @return 0 - если поток завершается 
-void* thread_cdc_generic(void* arg)
+void* thread_heandler_karnel_event(void* arg)
 {
-    Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
-    uint32_t ret = 0;
+    Epoll_Context_t* Epoll_Context_Pipe = (Epoll_Context_t*)arg;
 
-    for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++){
-        ret = USB_Add_New_Device(&Thread_CDC_Device->COM_Ports_Handle[i]);
-        if(ret != 0){
-            perror("Ошибка: USB_Com_Init - не инициализировался успешно\n");//TODO
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    Epoll_Add_InitUSB(Thread_CDC_Device);
-
-    Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
-    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
-
-    printf("Вход в поток приёма данных\n");
+    struct epoll_event events_pipe;
     while(1)
     {
 
-        int nfds = Epoll_Wait();
-        if(nfds < 0){
-            continue;
-        }
+        int nfds = Epoll_Wait(Epoll_Context_Pipe, &events_pipe, sizeof(events_pipe) / sizeof(struct epoll_event), -1);
 
-        if(events[0].data.fd == hotplug_pipe[0])
+
+        if(events_pipe.data.fd) //TODO
         {
             // HotplugMsg_t msg;
             // read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
@@ -301,38 +263,82 @@ void* thread_cdc_generic(void* arg)
             // }
             continue; // Обработали трубу, идем к следующему событию
 
-        }else{
-            Monitor_Msg_t Monitor_Msg[SUPPORT_NUMBER_DEVICE_USB];
-
-            Receive_msg(nfds, Monitor_Msg);
-
-            for(uint16_t i = 0; i < nfds; i++ )
-            {
-                if(Monitor_Msg[i].activeate)
-                {
-                    if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_AVE)
-                    {
-                        Print_Mode = SHOW_AVE_MODE;
-                        Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
-
-                    }
-
-                    if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_DUMP)
-                    {
-                        printf("Устройство %s передало правильный tail\n", Monitor_Msg[i].NameDev);
-                        for(uint32_t t = 0; t < DumpData_Rx.count_elements; t++){
-                            Print_Mode = SHOW_DUMP_MODE;
-                            Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE);
-                        }
-
-                    }
-                }
-            }
-
-            sleep(1);
-            
         }
 
+    }
+}
+
+
+
+/// @brief Поток осуществяет приём статических данных с логера, а так же прём дампов.
+/// @param arg Указатель на струтуру типа Thread_CDC_Device*
+/// @return 0 - если поток завершается 
+void* thread_cdc_generic(void* arg)
+{
+    Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
+    uint32_t ret = 0;
+
+    for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++){
+        ret = USB_Add_New_Device(&Thread_CDC_Device->COM_Ports_Handle[i]);
+        if(ret != 0){
+            perror("Ошибка: USB_Com_Init - не инициализировался успешно\n");//TODO
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    Epoll_Context_t* Epoll_Context_USB = Epoll_Create(SUPPORT_NUMBER_DEVICE_USB);
+    for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++)
+    {
+        COM_Ports_Handle_t* COM_Ports_Handle = &Thread_CDC_Device->COM_Ports_Handle[i];
+
+        if(Epoll_Add(Epoll_Context_USB, COM_Ports_Handle->File_Descriptor, EPOLLIN, &COM_Ports_Handle->Epoll_User_Data) != 0)
+        {
+            continue;
+        }
+    }
+
+    Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
+
+    struct epoll_event events_usb_array[SUPPORT_NUMBER_DEVICE_USB];
+
+    printf("Вход в поток приёма данных\n");
+    while(1)
+    {
+
+        int nfds = Epoll_Wait(Epoll_Context_USB, events_usb_array, SUPPORT_NUMBER_DEVICE_USB, -1);
+        if(nfds < 0){
+            continue;
+        }
+
+        Monitor_Msg_t Monitor_Msg[SUPPORT_NUMBER_DEVICE_USB];
+
+        Receive_msg(nfds, Monitor_Msg);
+
+        for(uint16_t i = 0; i < nfds; i++ )
+        {
+            if(Monitor_Msg[i].activeate)
+            {
+                if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_AVE)
+                {
+                    Print_Mode = SHOW_AVE_MODE;
+                    Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
+
+                }
+
+                if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_DUMP)
+                {
+                    printf("Устройство %s передало правильный tail\n", Monitor_Msg[i].NameDev);
+                    for(uint32_t t = 0; t < DumpData_Rx.count_elements; t++){
+                        Print_Mode = SHOW_DUMP_MODE;
+                        Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE);
+                    }
+
+                }
+            }
+        }
+
+        sleep(1);
 
     }
 
