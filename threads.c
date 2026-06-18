@@ -4,6 +4,9 @@
 #include "frames_structure.h"
 #include "rw_file.h"
 #include "epoll.h"
+#include "sockets.h"
+
+
 
 
 /// @brief Привязанные структуры к их потокам 
@@ -135,14 +138,13 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     return count_copyed_frame;
 }
 
+/// @brief Поток читающий собтия от ядра Linux 
+/// @param arg 
+/// @return 
 void* thread_kernel_events(void* arg)
 {
     int fd;
     Socket_Netlink_Init(&fd);
-
-
-    
-    Epoll_Add_Pipe(hotplug_pipe);
 
     printf("[HOTPLUG] Поток слежения Netlink запущен. Ждем события USB...\n");
 
@@ -226,47 +228,51 @@ void* thread_kernel_events(void* arg)
     return NULL;
 }
 
-void* thread_heandler_karnel_event(void* arg)
-{
-    Epoll_Context_t* Epoll_Context_Pipe = (Epoll_Context_t*)arg;
-
-    struct epoll_event events_pipe;
-    while(1)
-    {
-
-        int nfds = Epoll_Wait(Epoll_Context_Pipe, &events_pipe, sizeof(events_pipe) / sizeof(struct epoll_event), -1);
+/// @brief Поток для обработки событий от thread_kernel_events
+/// @param arg 
+/// @return 
+// void* thread_heandler_karnel_event(void* arg)
+// {
 
 
-        if(events_pipe.data.fd) //TODO
-        {
-            // HotplugMsg_t msg;
-            // read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
+//     struct epoll_event events_pipe;
 
-            // if (msg.action == USB_ACTION_ADD) {
-            //     printf("[READER] Получил команду добавить %s\n", msg.device_path);
+//     int nfds = Epoll_Wait(Epoll_Context_Pipe, &events_pipe, sizeof(events_pipe) / sizeof(struct epoll_event), -1);
+
+//     if(nfds > 0) 
+//     {
+//         Epoll_User_Data_t* event_data = (Epoll_User_Data_t*)events_pipe.data.ptr;
+
+//         if(event_data->type == EPOLL_SOURCE_HOTPLUG_PIPE)
+//         {
+//             HotplugMsg_t msg;
+//             read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
+
+//             if (msg.action == USB_ACTION_ADD) {
+//                 printf("[READER] Получил команду добавить %s\n", msg.device_path);
                 
-            //     int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
-            //     if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
-            //         printf("strlen не смог найти терминальный ноль");
-            //         continue;
-            //     }
-            //     memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
-            //     USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
-            //     Epoll_Add_Device(&COM_Ports_Handle[FreeDev]);
-                 
-            // } 
-            // else if (msg.action == USB_ACTION_REMOVE) {
-            //     printf("[READER] Получил команду удалить %s\n", msg.device_path);
-            //     int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);
-            //     Epoll_Delete(&COM_Ports_Handle[Number]);
-            //     USB_Remove_Device(&COM_Ports_Handle[Number], Thread_CDC_Device);
-            // }
-            continue; // Обработали трубу, идем к следующему событию
+//                 int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
+//                 if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
+//                     printf("strlen не смог найти терминальный ноль");
+//                     continue;
+//                 }
+//                 memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
+//                 USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
+//                 Epoll_Add(Epoll_Context_USB, COM_Ports_Handle[FreeDev].File_Descriptor , EPOLLIN, &COM_Ports_Handle[FreeDev].Epoll_User_Data);
+                
+//             } 
+//             else if (msg.action == USB_ACTION_REMOVE) {
+//                 printf("[READER] Получил команду удалить %s\n", msg.device_path);
+//                 int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);   
+//                 Epoll_Remove(Epoll_Context_USB, COM_Ports_Handle[Number].File_Descriptor);
+//                 USB_Remove_Device(&COM_Ports_Handle[Number], &Thread_CDC_Device);
+//             }
+            
+//         }
+//     }
 
-        }
 
-    }
-}
+// }
 
 
 
@@ -275,7 +281,12 @@ void* thread_heandler_karnel_event(void* arg)
 /// @return 0 - если поток завершается 
 void* thread_cdc_generic(void* arg)
 {
-    Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)arg;
+
+    Push_tread_arg_t* Push_tread_arg = (Push_tread_arg_t*)arg;
+
+    Thread_CDC_Device_t* Thread_CDC_Device = (Thread_CDC_Device_t*)Push_tread_arg->Thread_CDC_Device_p;
+    Epoll_Context_t* Epoll_Context_USB = (Epoll_Context_t*)Push_tread_arg->Epoll_Context_Pipe_p;
+
     uint32_t ret = 0;
 
     for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++){
@@ -286,7 +297,6 @@ void* thread_cdc_generic(void* arg)
         }
     }
 
-    Epoll_Context_t* Epoll_Context_USB = Epoll_Create(SUPPORT_NUMBER_DEVICE_USB);
     for(uint8_t i = 0; i < Thread_CDC_Device->NumberDev_of_Init; i++)
     {
         COM_Ports_Handle_t* COM_Ports_Handle = &Thread_CDC_Device->COM_Ports_Handle[i];
@@ -300,7 +310,7 @@ void* thread_cdc_generic(void* arg)
     Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
     Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
 
-    struct epoll_event events_usb_array[SUPPORT_NUMBER_DEVICE_USB];
+    struct epoll_event events_usb_array[SUPPORT_NUMBER_DEVICE_USB + NUMBERS_EVENTS_PIPE];
 
     printf("Вход в поток приёма данных\n");
     while(1)
@@ -311,34 +321,72 @@ void* thread_cdc_generic(void* arg)
             continue;
         }
 
-        Monitor_Msg_t Monitor_Msg[SUPPORT_NUMBER_DEVICE_USB];
-
-        Receive_msg(nfds, Monitor_Msg);
-
         for(uint16_t i = 0; i < nfds; i++ )
         {
-            if(Monitor_Msg[i].activeate)
+            if(events_usb_array[i].events != EPOLLIN) continue;
+
+            Epoll_User_Data_t* event_data = events_usb_array[i].data.ptr;
+
+            if(event_data->type == EPOLL_SOURCE_HOTPLUG_PIPE)
             {
-                if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_AVE)
+                HotplugMsg_t msg;
+                read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
+
+                if (msg.action == USB_ACTION_ADD) {
+                    printf("[READER] Получил команду добавить %s\n", msg.device_path);
+                    
+                    int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
+                    if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
+                        printf("strlen не смог найти терминальный ноль");
+                        continue;
+                    }
+                    memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
+                    USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
+                    Epoll_Add(Epoll_Context_USB, COM_Ports_Handle[FreeDev].File_Descriptor , EPOLLIN, &COM_Ports_Handle[FreeDev].Epoll_User_Data);
+                    
+                } 
+                else if (msg.action == USB_ACTION_REMOVE) {
+                    printf("[READER] Получил команду удалить %s\n", msg.device_path);
+                    int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);   
+                    Epoll_Remove(Epoll_Context_USB, COM_Ports_Handle[Number].File_Descriptor);
+                    USB_Remove_Device(&COM_Ports_Handle[Number], Thread_CDC_Device);
+                }
+
+            }
+
+            if(event_data->type == EPOLL_SOURCE_USB_CDC)
+            {
+                COM_Ports_Handle_t* port = (COM_Ports_Handle_t*)event_data->custom_data;
+                Monitor_Msg_t Monitor_Msg = {0};
+
+                // Читаем данные от Device 
+                Receive_msg(port, events_usb_array[i].events, &Monitor_Msg);
+
+                // Проверяем, не сломался ли порт в процессе чтения
+                if (Monitor_Msg.States & (ERR_READ_DATA_PAYLOAD | ERR_READ_TAIL | ERR_COUNT_FRAME | NOT_EPOLLIN_FROM_EPOLL)) 
                 {
+                    printf("Устройство %s вызвало ошибку или было отключено. Удаляем.\n", port->path_ttyACM);
+                    Epoll_Remove(Epoll_Context_USB, port->File_Descriptor);
+                    USB_Remove_Device(port, Thread_CDC_Device);
+                    continue; // Переходим к следующему событию
+                }
+
+                // Если все хорошо, раскидываем данные по очередям
+                if (Monitor_Msg.KindeOfFrame == READ_HEAD_AVE) {
                     Print_Mode = SHOW_AVE_MODE;
                     Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
-
                 }
-
-                if(Monitor_Msg[i].KindeOfFrame == READ_HEAD_DUMP)
-                {
-                    printf("Устройство %s передало правильный tail\n", Monitor_Msg[i].NameDev);
-                    for(uint32_t t = 0; t < DumpData_Rx.count_elements; t++){
-                        Print_Mode = SHOW_DUMP_MODE;
+                else if (Monitor_Msg.KindeOfFrame == READ_HEAD_DUMP) {
+                    printf("Устройство %s передало правильный DUMP tail\n", Monitor_Msg.NameDev);
+                    Print_Mode = SHOW_DUMP_MODE;
+                    for (uint32_t t = 0; t < DumpData_Rx.count_elements; t++) {
                         Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE);
                     }
-
                 }
+                
             }
-        }
 
-        sleep(1);
+        }
 
     }
 

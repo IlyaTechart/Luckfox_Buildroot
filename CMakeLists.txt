@@ -18,5 +18,5 @@ endif()
 
 set(CMAKE_C_FLAGS_DEBUG "-g -O0" CACHE STRING "" FORCE)
 
-add_executable(mylogger main.c threads.c usb_com.c display_data.c rw_file.c epoll.c)
+add_executable(mylogger main.c threads.c usb_com.c display_data.c rw_file.c epoll.c sockets.c)
 install(TARGETS mylogger RUNTIME DESTINATION bin)

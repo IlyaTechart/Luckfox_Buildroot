@@ -97,4 +97,4 @@ ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head
 int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
 int Read_Data_Payload(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx);
 int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
-void Receive_msg(int nfds, Monitor_Msg_t *Monitor_Debug);
+void Receive_msg(COM_Ports_Handle_t* COM_Ports_Active, uint32_t epoll_events, Monitor_Msg_t *Monitor_Debug);

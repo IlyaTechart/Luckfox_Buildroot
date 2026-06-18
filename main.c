@@ -111,17 +111,18 @@ int main(int argc, char * argv[])
     .fd = hotplug_pipe[0],
     .custom_data = NULL
     };
-    Epoll_Context_t* Epoll_Context_Pipe = Epoll_Create(NUMBERS_EVENTS_PIPE);
-    if(Epoll_Add(Epoll_Context_Pipe, hotplug_pipe[0], EPOLLIN, &pipe_epoll_data) != 0)
+    Epoll_Context_t* Epoll_Context_USB = Epoll_Create(SUPPORT_NUMBER_DEVICE_USB + NUMBERS_EVENTS_PIPE);
+    if(Epoll_Add(Epoll_Context_USB, hotplug_pipe[0], EPOLLIN, &pipe_epoll_data) != 0)
     {
         printf("Pipe не был добавлен в epoll\n");
     }
+    Push_tread_arg_t Push_tread_arg = { .Thread_CDC_Device_p = &Thread_CDC_Device,
+                                        .Epoll_Context_Pipe_p = Epoll_Context_USB 
+                                                                                    };
 
 
     USB_Buffers_Init();
-
-
-
+    
     int result;
 
     result = pthread_create(&pthread_kernel_events, NULL, thread_kernel_events, NULL);
@@ -131,14 +132,14 @@ int main(int argc, char * argv[])
     }
     printf("Поток kernel_events создан\n");
 
-    result = pthread_create(&pthread_heandler_karnel_event, NULL, thread_heandler_karnel_event, Epoll_Context_Pipe);
-    if (result != 0) {
-    fprintf(stderr,"Не удалось создать поток: heandler_karnel_event\n");
-    return EXIT_FAILURE;
-    }
-    printf("Поток heandler_karnel_event создан\n");
+    // result = pthread_create(&pthread_heandler_karnel_event, NULL, thread_heandler_karnel_event, PushEpullTread);
+    // if (result != 0) {
+    // fprintf(stderr,"Не удалось создать поток: heandler_karnel_event\n");
+    // return EXIT_FAILURE;
+    // }
+    // printf("Поток heandler_karnel_event создан\n");
 
-    result = pthread_create(&pthread_cdc_generic, NULL, thread_cdc_generic , &Thread_CDC_Device);
+    result = pthread_create(&pthread_cdc_generic, NULL, thread_cdc_generic , &Push_tread_arg);
     if (result != 0) {
     fprintf(stderr,"Не удалось создать поток: generic\n");
     return EXIT_FAILURE;

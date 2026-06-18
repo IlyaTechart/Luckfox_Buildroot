@@ -24,6 +24,13 @@
 /// @brief "Труба" для передачи 
 int hotplug_pipe[2]; // Работает как файловый дискриптор 
 
+typedef struct Push_tread_arg
+{
+    Thread_CDC_Device_t* Thread_CDC_Device_p;
+    Epoll_Context_t* Epoll_Context_Pipe_p;
+};
+typedef struct Push_tread_arg Push_tread_arg_t;
+
 // Какие бывают команды от охранника
 typedef enum {
     USB_ACTION_ADD,
@@ -77,7 +84,7 @@ typedef struct{
 
 
 pthread_t pthread_kernel_events;
-pthread_t pthread_heandler_karnel_event;
+//pthread_t pthread_heandler_karnel_event;
 pthread_t pthread_cdc_generic;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
@@ -91,7 +98,7 @@ uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
 void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode);
 int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode);
 void* thread_kernel_events(void* arg);
-void* thread_heandler_karnel_event(void* arg);
+//void* thread_heandler_karnel_event(void* arg);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);
 void* thread_filesystem(void* arg);

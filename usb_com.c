@@ -87,6 +87,7 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
     COM_Port->Device_ID = ID_dev;
     COM_Port->Epoll_User_Data.type = EPOLL_SOURCE_USB_CDC;
     COM_Port->Epoll_User_Data.fd = COM_Port->File_Descriptor;
+    COM_Port->Epoll_User_Data.custom_data = COM_Port;
     
     if(ID_dev != UINT16_MAX){ ID_dev++; }else{ ID_dev = 0; }
 
@@ -95,51 +96,68 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
 
 }
 
-/// @brief Основная функция чтания данных из COM порта 
-/// @param COMPort Структура на читаемое устройсвто 
-/// @param buffer Указатель на буфер куда будут записаны данные с читаемого устройства 
-/// @param size_bytes Колличесвто байт 
-/// @param Timeout Тайм-аут для выхода из функции 
-/// @return Колличесвто прочитаных БАЙТ из COM порта 
-int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes, uint32_t Timeout)
+#include <poll.h>
+
+/// @brief Основная функция чтения данных из COM порта (оптимизирована под non-blocking)
+/// @param COMPort Структура на читаемое устройство
+/// @param buffer Указатель на буфер
+/// @param size_bytes Сколько всего байт нужно прочитать
+/// @param Timeout_ms Таймаут ожидания новой порции данных в миллисекундах
+/// @return Количество прочитанных БАЙТ из COM порта (или код ошибки < 0)
+int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size_bytes, uint32_t Timeout_ms)
 {
     int num_bytes_rx = 0;
-    uint32_t count_bytse = 0;
+    uint32_t count_bytes = 0;
     uint8_t *ptr = (uint8_t*)buffer;
 
-    struct timespec start_time, current_time;
-    clock_gettime(CLOCK_MONOTONIC, &start_time); // Засекаем время старта
+    struct pollfd pfd;
+    pfd.fd = COMPort->File_Descriptor;
+    pfd.events = POLLIN;
 
-    while(count_bytse < size_bytes){
+    while (count_bytes < size_bytes) {
+        // Читаем всё, что сейчас есть в буфере ядра ОС
+        num_bytes_rx = read(COMPort->File_Descriptor, ptr + count_bytes, size_bytes - count_bytes);
 
-        num_bytes_rx = read(COMPort->File_Descriptor, ptr + count_bytse, size_bytes - count_bytse);
-        if(num_bytes_rx == -1){
-            if(errno == EAGAIN || errno == EWOULDBLOCK){
-                clock_gettime(CLOCK_MONOTONIC, &current_time);
-                uint32_t elapsed_ms = (current_time.tv_sec - start_time.tv_sec) * 1000 +
-                                      (current_time.tv_nsec - start_time.tv_nsec) / 1000000;
+        if (num_bytes_rx > 0) {
+            count_bytes += num_bytes_rx;
+            // Данные получены, идем на следующую итерацию читать остаток
+            continue; 
+        } 
+        else if (num_bytes_rx == 0) {
+            // Файл закрыт на той стороне (устройство отключено)
+            printf("Устройство %s отключено физически (read = 0)\n", COMPort->path_ttyACM);
+            return USB_ERR;
+        } 
+        else {
+            // num_bytes_rx == -1
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Буфер ядра пуст. Нам нужно подождать, пока плата пришлет еще кусок.
+                // Вместо usleep(1000) мы усыпляем этот конкретный вызов с помощью poll
+                int poll_res = poll(&pfd, 1, Timeout_ms);
                 
-                if (elapsed_ms >= Timeout) {
+                if (poll_res > 0) {
+                    // Пришли новые данные, возвращаемся в начало цикла читать их!
+                    continue;
+                } 
+                else if (poll_res == 0) {
+                    // Таймаут истек. Плата замолчала на середине пакета.
                     printf("Тайм-аут при чтении из %s\n", COMPort->path_ttyACM);
-                    return USB_TIMEOUT;
+                    return (count_bytes > 0) ? count_bytes : USB_TIMEOUT;
+                } 
+                else {
+                    // Ошибка самого poll (например прерван сигналом)
+                    if (errno == EINTR) continue;
+                    return USB_ERR;
                 }
-                usleep(1000); 
-                continue;
+            } 
+            else {
+                // Серьезная ошибка (EIO, ENODEV - кабель выдернули прямо в процессе)
+                perror("Ошибка функции read()"); 
+                return USB_ERR;
             }
-            perror("Ошибка функции read(): не прочитала файл\n"); 
-            return USB_ERR;
-        }else if(num_bytes_rx == 0){
-//            Epoll_Delete(COMPort);
-//            USB_Remove_Device(COMPort, &Thread_CDC_Device);                                  // Здесь по идее не должно быть функций Epoll_Delete и USB_Remove_Device. Отключение во время чтеняи надо обрабатывать в отдельном потоке, а здесь проврерять по флагу.
-            printf("Устройство %s отключено, ожидание тайм-аута\n", COMPort->path_ttyACM);
-            return USB_ERR;
-        }else if(num_bytes_rx > 0){
-            printf("Принято %d Байт\n", num_bytes_rx);
-            count_bytse += num_bytes_rx;
         }
-
     }
-    return count_bytse;
+    return count_bytes;
 }
 
 
@@ -310,80 +328,98 @@ int Read_Tail_Frame(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx)
 }
 
 
-void Receive_msg(int nfds, Monitor_Msg_t *Monitor_Debug)
+/// @brief Обрабатывает входящие данные для ОДНОГО устройства
+/// @param COM_Ports_Active Указатель на структуру порта
+/// @param epoll_events События, которые вернул epoll для этого порта (EPOLLIN, EPOLLERR и т.д.)
+/// @param Monitor_Debug Указатель на структуру для записи статуса операции
+void Receive_msg(COM_Ports_Handle_t* COM_Ports_Active, uint32_t epoll_events, Monitor_Msg_t *Monitor_Debug)
 {
     int num_bytes = 0;
-    memset(Monitor_Debug, 0x00, sizeof(Monitor_Msg_t) * SUPPORT_NUMBER_DEVICE_USB);
-    for(uint16_t i = 0; i < nfds; i++ )
-    {
-        COM_Ports_Handle_t* COM_Ports_Active = (COM_Ports_Handle_t*)events[i].data.ptr;
 
-        Monitor_Debug[i].activeate = true;
-        Monitor_Debug[i].ID_Dev_Who_From = COM_Ports_Active->Device_ID;
-        memcpy(&Monitor_Debug[i].NameDev, &COM_Ports_Active->path_ttyACM, 20);
+    // 1. Инициализируем структуру мониторинга для этого вызова
+    memset(Monitor_Debug, 0x00, sizeof(Monitor_Msg_t));
+    Monitor_Debug->activeate = true;
+    Monitor_Debug->ID_Dev_Who_From = COM_Ports_Active->Device_ID;
+    
+    // Копируем имя устройства (чтобы хвост не был мусором, лучше использовать snprintf)
+    snprintf(Monitor_Debug->NameDev, sizeof(Monitor_Debug->NameDev), "%s", COM_Ports_Active->path_ttyACM);
 
-        memset(DumpData_Rx.buffer, 0x00, TAKE_MEMORY_FOR_ELEMENTS * sizeof(ModulData_t));
+    // 2. Очищаем глобальные буферы приема (если они всё еще глобальные)
+    memset(DumpData_Rx.buffer, 0x00, TAKE_MEMORY_FOR_ELEMENTS * sizeof(ModulData_t));
+    memset(AVE_Data_Rx.buffer, 0x00, sizeof(ModulData_t)); // Если буфер AVE один
 
-        ReadDataState_t KindOfHead;
-        if(events[i].events & EPOLLIN){
-            uint32_t Head_Frame = 0;
-            KindOfHead = Read_Head_Frame(COM_Ports_Active, &Head_Frame);
+    // 3. Проверка на отключение кабеля (ошибки от epoll)
+    if (epoll_events & (EPOLLERR | EPOLLHUP)) {
+        Monitor_Debug->States |= NOT_EPOLLIN_FROM_EPOLL;
+        return; // Сразу выходим, устройство отключено или сломано
+    }
 
-            switch (KindOfHead)
-            {
+    // 4. Основная логика чтения
+    if (epoll_events & EPOLLIN) {
+        uint32_t Head_Frame = 0;
+        ReadDataState_t KindOfHead = Read_Head_Frame(COM_Ports_Active, &Head_Frame);
+
+        switch (KindOfHead)
+        {
             case READ_HEAD_DUMP: 
-                Monitor_Debug[i].KindeOfFrame = READ_HEAD_DUMP;
-                if(Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
+                Monitor_Debug->KindeOfFrame = READ_HEAD_DUMP;
+                
+                if (Read_Count_Frame(COM_Ports_Active, &DumpData_Rx) > 0)
                 {
                     num_bytes = Read_Data_Payload(COM_Ports_Active, &DumpData_Rx);
-                    if(num_bytes <= 0){
-                        Epoll_Delete(COM_Ports_Active);
-                        Monitor_Debug[i].States |= ERR_READ_DATA_PAYLOAD;
-                        continue;
+                    if (num_bytes <= 0) {
+                        Monitor_Debug->States |= ERR_READ_DATA_PAYLOAD;
+                        return; // Выходим с ошибкой
                     }
-                    if(Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0){
-                        Epoll_Delete(COM_Ports_Active);
-                        Monitor_Debug[i].States |= ERR_READ_TAIL;
-                        continue;
+                    
+                    if (Read_Tail_Frame(COM_Ports_Active, &DumpData_Rx) != 0) {
+                        Monitor_Debug->States |= ERR_READ_TAIL;
+                        return; // Выходим с ошибкой
                     }
-                }else{
-                    Monitor_Debug[i].States |= ERR_COUNT_FRAME;
+                } else {
+                    Monitor_Debug->States |= ERR_COUNT_FRAME;
+                    return; // Выходим с ошибкой
                 }
 
-                if(DumpData_Rx.tail_frames != ID_TAIL_FRMES) continue;
+                if (DumpData_Rx.tail_frames != ID_TAIL_FRMES) {
+                    Monitor_Debug->States |= ERR_READ_TAIL;
+                }
                 break;
             
             case READ_HEAD_AVE:
-                Monitor_Debug[i].KindeOfFrame = READ_HEAD_AVE;
-                if(Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
+                Monitor_Debug->KindeOfFrame = READ_HEAD_AVE;
+                
+                if (Read_Count_Frame(COM_Ports_Active, &AVE_Data_Rx) > 0)
                 {
                     num_bytes = Read_Data_Payload(COM_Ports_Active, &AVE_Data_Rx);
-                    if(num_bytes <= 0){
-                        Epoll_Delete(COM_Ports_Active);
-                        Monitor_Debug[i].States |= ERR_READ_DATA_PAYLOAD;
-                        continue;
+                    if (num_bytes <= 0) {
+                        Monitor_Debug->States |= ERR_READ_DATA_PAYLOAD;
+                        return;
                     }
-                    if(Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0){
-                        Epoll_Delete(COM_Ports_Active);
-                        Monitor_Debug[i].States |= ERR_READ_TAIL;
-                        continue;
+                    
+                    if (Read_Tail_Frame(COM_Ports_Active, &AVE_Data_Rx) != 0) {
+                        Monitor_Debug->States |= ERR_READ_TAIL;
+                        return;
                     }
-                }else{
-                    Monitor_Debug[i].States |= ERR_COUNT_FRAME;
+                } else {
+                    Monitor_Debug->States |= ERR_COUNT_FRAME;
+                    return;
                 }
-                if(AVE_Data_Rx.tail_frames != ID_TAIL_FRMES) continue;
+                
+                if (AVE_Data_Rx.tail_frames != ID_TAIL_FRMES) {
+                    Monitor_Debug->States |= ERR_READ_TAIL;
+                }
                 break;
             
             default:
+                Monitor_Debug->KindeOfFrame = READ_NONE;
                 break;
-            }
-
-        }else{
-            Monitor_Debug[i].States |= NOT_EPOLLIN_FROM_EPOLL;
         }
 
+    } else {
+        // Если проснулись не по EPOLLIN и не по EPOLLERR
+        Monitor_Debug->States |= NOT_EPOLLIN_FROM_EPOLL;
     }
-
 }
 
 
