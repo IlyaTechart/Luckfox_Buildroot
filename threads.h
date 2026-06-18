@@ -24,11 +24,12 @@
 /// @brief "Труба" для передачи 
 int hotplug_pipe[2]; // Работает как файловый дискриптор 
 
-typedef struct Push_tread_arg
+struct Push_tread_arg
 {
     Thread_CDC_Device_t* Thread_CDC_Device_p;
     Epoll_Context_t* Epoll_Context_Pipe_p;
 };
+
 typedef struct Push_tread_arg Push_tread_arg_t;
 
 // Какие бывают команды от охранника

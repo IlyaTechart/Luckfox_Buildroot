@@ -399,7 +399,7 @@ void* thread_cdc_generic(void* arg)
 void* thread_display(void* arg)
 {
     ModulData_t* ModulDatPrintDump = (ModulData_t*)calloc( TAKE_MEMORY_FOR_ELEMENTS, sizeof(ModulData_t) );
-
+    ModulData_t ModulDataPrintAVE;
     
 
     uint32_t index_count = 0;
@@ -408,40 +408,29 @@ void* thread_display(void* arg)
     {
         
         
-        ModulData_t ModulDataPrintAVE;
-        switch (Print_Mode)
-        {
-        case SHOW_AVE_MODE:{
-
-            int count_data = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_WAIT_STATE);
-            logger_print_one_frame(&ModulDataPrintAVE, index_count, LOG_COLOR_DEFAULT);
-            if (index_count < UINT32_MAX) {
-                index_count++;
-            } else {
-                index_count = 0;
-            }
-
-            Print_Mode = SHOW_NONE;
-            break;
-        }
+        // 1. Проверяем, есть ли что-то в очереди AVE
+        // Используем QUEUE_PASS_STATE (неблокирующий вызов), чтобы не зависнуть, если там пусто
+        int ave_count = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_PASS_STATE);
         
-        case SHOW_DUMP_MODE:{
-
-            int count_data = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
-            printf("Количество элементов в очереди: %u, head: %u tail: %u\n", Queue_dump.count, Queue_dump.head, Queue_dump.tail);
-            for(uint32_t i = 0; i < count_data; i++)
-            {
-                if(ModulDatPrintDump[i].packet.alarms.raw != 0){
-                    logger_print_one_frame(&ModulDataPrintAVE, i, LOG_COLOR_RED);
+        if (ave_count > 0) {
+            logger_print_one_frame(&ModulDataPrintAVE, index_count, LOG_COLOR_DEFAULT);
+            if (index_count < UINT32_MAX) index_count++; else index_count = 0;
+        }
+        // 2. Проверяем, есть ли что-то в очереди DUMP
+        // Читаем сколько есть, но не больше NUMBER_ELLEMENTS_RECESIVE
+        int dump_count = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
+        
+        if (dump_count > 0) {
+            printf("Количество элементов в очереди DUMP: %u, прочитали: %d\n", Queue_dump.count, dump_count);
+            for(uint32_t i = 0; i < dump_count; i++) {
+                if(ModulDatPrintDump[i].packet.alarms.raw != 0) {
+                    logger_print_one_frame(&ModulDatPrintDump[i], i, LOG_COLOR_RED);
                 }
             }
-            Print_Mode = SHOW_NONE;
-            break;
-
         }
-            
-        default:
-            break;
+        // 3. Если ни там, ни там нет данных, немного спим, чтобы не грузить процессор
+        if (ave_count <= 0 && dump_count <= 0) {
+            usleep(10000); // Спим 10 миллисекунд
         }
 
     }
