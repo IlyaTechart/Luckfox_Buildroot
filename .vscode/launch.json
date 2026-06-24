@@ -9,7 +9,12 @@
             "args": [],
             "stopAtEntry": true,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                {
+                    "name": "TERM",
+                    "value": "xterm"
+                }
+            ],
             "externalConsole": false,
             // ВАЖНО: Используем системный всеядный отладчик!
             "MIMode": "gdb",

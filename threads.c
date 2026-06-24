@@ -127,8 +127,6 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
         
     }
 
-    //memcpy(data_ptr, Queue->data[Queue->tail], cnt_read_frame);
-
     if(pthread_cond_signal(&Queue->cond_not_full) != 0)
     {
         perror("Pop: Неуспешное выполнение функции pthread_cond_signal\n");
@@ -228,53 +226,6 @@ void* thread_kernel_events(void* arg)
     return NULL;
 }
 
-/// @brief Поток для обработки событий от thread_kernel_events
-/// @param arg 
-/// @return 
-// void* thread_heandler_karnel_event(void* arg)
-// {
-
-
-//     struct epoll_event events_pipe;
-
-//     int nfds = Epoll_Wait(Epoll_Context_Pipe, &events_pipe, sizeof(events_pipe) / sizeof(struct epoll_event), -1);
-
-//     if(nfds > 0) 
-//     {
-//         Epoll_User_Data_t* event_data = (Epoll_User_Data_t*)events_pipe.data.ptr;
-
-//         if(event_data->type == EPOLL_SOURCE_HOTPLUG_PIPE)
-//         {
-//             HotplugMsg_t msg;
-//             read(hotplug_pipe[0], &msg, sizeof(HotplugMsg_t));
-
-//             if (msg.action == USB_ACTION_ADD) {
-//                 printf("[READER] Получил команду добавить %s\n", msg.device_path);
-                
-//                 int FreeDev = USB_Finde_Free_Device(COM_Ports_Handle);
-//                 if(strlen(msg.device_path) > sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) ){
-//                     printf("strlen не смог найти терминальный ноль");
-//                     continue;
-//                 }
-//                 memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
-//                 USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
-//                 Epoll_Add(Epoll_Context_USB, COM_Ports_Handle[FreeDev].File_Descriptor , EPOLLIN, &COM_Ports_Handle[FreeDev].Epoll_User_Data);
-                
-//             } 
-//             else if (msg.action == USB_ACTION_REMOVE) {
-//                 printf("[READER] Получил команду удалить %s\n", msg.device_path);
-//                 int Number = USB_Finde_Device_Of_Path(msg.device_path, COM_Ports_Handle);   
-//                 Epoll_Remove(Epoll_Context_USB, COM_Ports_Handle[Number].File_Descriptor);
-//                 USB_Remove_Device(&COM_Ports_Handle[Number], &Thread_CDC_Device);
-//             }
-            
-//         }
-//     }
-
-
-// }
-
-
 
 /// @brief Поток осуществяет приём статических данных с логера, а так же прём дампов.
 /// @param arg Указатель на струтуру типа Thread_CDC_Device*
@@ -306,9 +257,6 @@ void* thread_cdc_generic(void* arg)
             continue;
         }
     }
-
-    Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
-    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
 
     struct epoll_event events_usb_array[SUPPORT_NUMBER_DEVICE_USB + NUMBERS_EVENTS_PIPE];
 
@@ -444,7 +392,7 @@ void* thread_filesystem(void* arg)
     while(1)
     {
         ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
-        int popped_elements = Queue_Pop(&Queue_dump, DataFrameBuff, NUMBER_ELLEMENTS_RECESIVE, QUEUE_WAIT_STATE);
+        int popped_elements = Queue_Pop(&Queue_dump, DataFrameBuff, 1000, QUEUE_WAIT_STATE);
 
         if(popped_elements > 0)
         {

@@ -9,10 +9,11 @@
 #include <mqueue.h>
 #include <time.h>
 #include <glob.h>
+#include <locale.h>
 #include "threads.h"
 #include "usb_com.h"
 #include "epoll.h"
-
+#include "display_data.h"
 
 
 /*
@@ -93,13 +94,14 @@ int Get_Discription_Connected_Devices(void)
 int main(int argc, char * argv[])
 {
     setvbuf(stdout, NULL, _IONBF, 0);// Отключение буферизации вывода в терминал. 
+    if (getenv("TERM") == NULL) {
+        setenv("TERM", "xterm", 1);
+    }
+    
+    // Если программа запущена без правильного окружения (через GDB)
 
     Thread_CDC_Device.COM_Ports_Handle = COM_Ports_Handle;
     int devices_count = Get_Discription_Connected_Devices();
-    if (devices_count == 0) {
-        fprintf(stderr, "Ошибка: Не найдено ни одного устройства для подключения.\n");
-        return EXIT_FAILURE; // Завершаем программу, если логгер не подключен
-    }
 
     if (pipe(hotplug_pipe) == -1) {    // Делайет 2 фаловых дискриптора из массива hotplug_pipe[0] — дескриптор для чтения, hotplug_pipe[1] — дескриптор для записи
         perror("Ошибка создания pipe");
@@ -122,6 +124,9 @@ int main(int argc, char * argv[])
 
 
     USB_Buffers_Init();
+
+    Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
     
     int result;
 
@@ -131,13 +136,6 @@ int main(int argc, char * argv[])
     return EXIT_FAILURE;
     }
     printf("Поток kernel_events создан\n");
-
-    // result = pthread_create(&pthread_heandler_karnel_event, NULL, thread_heandler_karnel_event, PushEpullTread);
-    // if (result != 0) {
-    // fprintf(stderr,"Не удалось создать поток: heandler_karnel_event\n");
-    // return EXIT_FAILURE;
-    // }
-    // printf("Поток heandler_karnel_event создан\n");
 
     result = pthread_create(&pthread_cdc_generic, NULL, thread_cdc_generic , &Push_tread_arg);
     if (result != 0) {
@@ -153,58 +151,50 @@ int main(int argc, char * argv[])
     }
     printf("Поток display созадн\n");
 
-    // result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
-    // if (result != 0) {
-    // fprintf(stderr,"Не удалось создать поток: display\n");
-    // return EXIT_FAILURE;
-    // }
-    // printf("Поток вывода информации созадн\n");
+    result = pthread_create(&pthread_filesystem, NULL, thread_filesystem , NULL);
+    if (result != 0) {
+    fprintf(stderr,"Не удалось создать поток: display\n");
+    return EXIT_FAILURE;
+    }
+    printf("Поток вывода информации созадн\n");
 
 
-    // const char *green = "\033[32m";  // зелёный текст
-    // const char *white = "\033[37m";  // белый текст
-    // const char *blue = "\033[35m";  // белый текст
-    // const char *reset = "\033[0m";   // сброс всех атрибутов
+     int user_choice = 0;
 
-    // const char *setcursor = "\x1b[s"; // Сохранить текущую позицию курсора
-    // const char *restorecursor = "\x1b[u"; // Восстановить сохраненную позицию курсора
-    // const char *setcornercursor = "\x1b[H"; // Переместить курсор в левый верхний угол (1,1)
-  
-    // const char *clearsring = "\x1b[2K"; // Очистить всю строку, где находится курсор
-
-
-
-    // sleep(2);
-    // char down_dispay[30];
-    // memset(down_dispay,'\n', sizeof(down_dispay));
-    // printf("%s", down_dispay);
-    // printf("%s", setcornercursor);
-    // printf("%s", blue);
-    // printf("%s", setcursor);
-    // printf("%s", clearsring);
-
-
-    // int sumbol[4];
-    // sumbol[0] = getchar();
-    // sumbol[1] = getchar();
-    // sumbol[2] = getchar();
-    // sumbol[3] = getchar();
-    // printf("Первый %d, Второй %d, Третий %d, Четвёртый %d\n", sumbol[0], sumbol[1], sumbol[2], sumbol[3]);
     while(1)
     {
+                // Вызываем меню. Программа "зависнет" здесь, пока пользователь не выберет пункт
+        user_choice = main_menu(user_choice);
+        
+        // Обрабатываем выбор пользователя
+        switch (user_choice) {
+            case 0:
+                printf("\n--- Вы выбрали: Показать поток данных ---\n");
+                // TODO: Включить флаг вывода данных
+                // Ждем нажатия Enter, чтобы вернуться в меню
+                getchar();
+                break;
+            case 1:
+                printf("\n--- Вы выбрали: Включить/Отключить запись в CSV ---\n");
+                // TODO: Переключить флаг записи
+                getchar();
+                break;
+            case 2:
+                printf("\n--- Вы выбрали: Показывать live данные ---\n");
+                // TODO: Включить флаг Live-режима
+                getchar();
+                break;
+            case 3:
+                printf("\n--- Подключенные устройства: ---\n");
+                // Вывести список устройств...
+                getchar();
+                break;
+            case 4:
+                printf("\nВыход из программы.\n");
+                exit(0);
 
-        // printf("========================================================================\n");
-        // printf("                             Главное меню                               \n");
-        // printf("========================================================================\n");
-        // printf("\n");
-        // printf("1) Показать поток данных\n");
-        // printf("2) Зайти в меню дампа\n");
-
-        // printf("%s", restorecursor);
-
-        sleep(2);
-
-    }
+        }
     printf("Программа завершилась\n");
     return 0;
+    }
 }

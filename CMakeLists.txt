@@ -16,7 +16,10 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
 
+find_package(Curses REQUIRED)
 set(CMAKE_C_FLAGS_DEBUG "-g -O0" CACHE STRING "" FORCE)
 
 add_executable(mylogger main.c threads.c usb_com.c display_data.c rw_file.c epoll.c sockets.c)
+target_include_directories(mylogger PRIVATE ${CURSES_INCLUDE_DIRS})
+target_link_libraries(mylogger PRIVATE ${CURSES_LIBRARIES} pthread)
 install(TARGETS mylogger RUNTIME DESTINATION bin)

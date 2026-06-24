@@ -1,9 +1,145 @@
 #define _POSIX_C_SOURCE 199309L
+#include <locale.h>
 #include "display_data.h"
 
+// Глобальные переменные для меню
+static const char *menu_items[] = {
+    "1) Show data stream",
+    "2) Enable/Disable CSV dump recording",
+    "3) Show live data from device",
+    "4) Show connected devices list",
+    "5) Exit"
+};
+#define NUM_MENU_ITEMS (sizeof(menu_items) / sizeof(menu_items[0]))
+
+static bool ncurses_initialized = false;
+
+// ============================================================================
+// Инициализация и закрытие ncurses
+// ============================================================================
+static void init_menu_ui(void) {
+       setlocale(LC_ALL, "");
+    if (!ncurses_initialized) {
+        initscr();            // Инициализация ncurses
+        cbreak();             // Отключение буферизации строк (реагируем сразу)
+        noecho();             // Отключение эха вводимых символов
+        keypad(stdscr, TRUE); // Включение обработки стрелок и доп. клавиш
+        curs_set(0);          // Скрыть курсор
+        ncurses_initialized = true;
+    }
+}
+
+static void close_menu_ui(void) {
+    if (ncurses_initialized) {
+        endwin();             // Восстанавливаем обычный режим терминала
+        ncurses_initialized = false;
+    }
+}
+
+// ============================================================================
+// Отрисовка самого меню (внутренняя функция)
+// ============================================================================
+static void draw_menu(int current_selection) {
+    clear();
+
+    // Верхний баннер-инструкция 
+    attron(A_REVERSE); // Инвертируем цвета (выделенный фон)
+    mvprintw(0, 0, " CONTROL MYLOGGER (Luckfox Pico Ultra W) ");
+    attroff(A_REVERSE);
+    
+    mvprintw(2, 0, "NAVIGATION INSTRUCTIONS:");
+    mvprintw(3, 2, "Use [UP] and [DOWN] arrows to move.");
+    mvprintw(4, 2, "Press [ENTER] to select an option.");
+
+    mvprintw(6, 0, "========================================================================");
+    mvprintw(7, 0, "                             Main Menu                                  ");
+    mvprintw(8, 0, "========================================================================");
+
+    // Отрисовка пунктов меню
+    for(int i = 0; i < (int)NUM_MENU_ITEMS; i++) {
+        if(i == current_selection) {
+            // Выделяем текущий пункт
+            attron(A_REVERSE);
+            mvprintw(10 + i, 2, "%s <---", menu_items[i]);
+            attroff(A_REVERSE);
+        } else {
+            // Обычные пункты
+            mvprintw(10 + i, 2, "%s      ", menu_items[i]);
+        }
+    }
+    
+    // Применяем изменения
+    refresh();
+}
+
+// ============================================================================
+// 1) Основная функция вызова меню. 
+// Она блокирует поток до тех пор, пока пользователь не нажмет Enter.
+// Возвращает номер выбранного пункта (от 0 до NUM_MENU_ITEMS - 1).
+// ============================================================================
+int main_menu(int default_selection)
+{
+    int current_selection = default_selection;
+    if (current_selection < 0 || current_selection >= (int)NUM_MENU_ITEMS) {
+        current_selection = 0;
+    }
+
+    // Включаем графический режим
+    init_menu_ui();
+    
+    int ch;
+    bool menu_running = true;
+
+    while (menu_running) {
+        // Отрисовываем меню с текущим выбранным пунктом
+        draw_menu(current_selection);
+
+        // Ждем нажатия клавиши (стрелки, Enter)
+        ch = getch();
+
+        switch (ch) {
+            case KEY_UP:
+                if (current_selection > 0) {
+                    current_selection--;
+                } else {
+                    current_selection = NUM_MENU_ITEMS - 1; // Циклический переход в конец
+                }
+                break;
+                
+            case KEY_DOWN:
+                if (current_selection < (int)NUM_MENU_ITEMS - 1) {
+                    current_selection++;
+                } else {
+                    current_selection = 0; // Циклический переход в начало
+                }
+                break;
+                
+            case '\n':       // Клавиша Enter в Linux/ncurses
+            case '\r':
+            case KEY_ENTER:
+                menu_running = false; // Выходим из цикла меню
+                break;
+                
+            case 'q':
+            case 'Q':
+                // Быстрый выход из программы
+                menu_running = false;
+                current_selection = NUM_MENU_ITEMS - 1; // Предполагаем, что последний пункт - это Выход
+                break;
+        }
+    }
+
+    // Обязательно закрываем ncurses перед тем, как вернуть управление
+    // Это вернет консоль в нормальный вид, чтобы printf работал корректно
+    close_menu_ui();
+    
+    return current_selection;
+}
 
 
-
+// ============================================================================
+// Функция вывода кадров (остается без изменений, так как работает через printf)
+// ============================================================================
 void logger_print_one_frame(const ModulData_t *m, size_t frame_index, logger_color_t color)
 {
 
@@ -23,7 +159,6 @@ void logger_print_one_frame(const ModulData_t *m, size_t frame_index, logger_col
     if (color != LOG_COLOR_DEFAULT) {
         printf("%s", ansi_colors[color]);
     }
-
 
     const FpgaToEspPacket_t *p = &m->packet;
 
