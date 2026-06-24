@@ -1,10 +1,11 @@
 #define _POSIX_C_SOURCE 199309L
 #include <locale.h>
+#include <stdarg.h>
 #include "display_data.h"
 
 // Глобальные переменные для меню
 static const char *menu_items[] = {
-    "1) Show data stream",
+    "1) Show data stream (Log Viewer)",
     "2) Enable/Disable CSV dump recording",
     "3) Show live data from device",
     "4) Show connected devices list",
@@ -13,37 +14,49 @@ static const char *menu_items[] = {
 #define NUM_MENU_ITEMS (sizeof(menu_items) / sizeof(menu_items[0]))
 
 static bool ncurses_initialized = false;
+//static int menu_selection = 0;
 
 // ============================================================================
-// Инициализация и закрытие ncurses
+// Инициализация и закрытие ncurses (Теперь публичные)
 // ============================================================================
-static void init_menu_ui(void) {
-       setlocale(LC_ALL, "");
+void Display_Init(void) {
+    setlocale(LC_ALL, "");
     if (!ncurses_initialized) {
         initscr();            // Инициализация ncurses
-        cbreak();             // Отключение буферизации строк (реагируем сразу)
-        noecho();             // Отключение эха вводимых символов
-        keypad(stdscr, TRUE); // Включение обработки стрелок и доп. клавиш
+        cbreak();             // Отключение буферизации строк
+        noecho();             // Отключение эха
+        keypad(stdscr, TRUE); // Включение обработки стрелок
         curs_set(0);          // Скрыть курсор
+        halfdelay(1);         // Полу-блокирующее ожидание ввода (0.1 сек)
         ncurses_initialized = true;
     }
 }
 
-static void close_menu_ui(void) {
+void Display_Deinit(void) {
     if (ncurses_initialized) {
-        endwin();             // Восстанавливаем обычный режим терминала
+        endwin();             // Восстанавливаем терминал
         ncurses_initialized = false;
     }
 }
 
 // ============================================================================
-// Отрисовка самого меню (внутренняя функция)
+// Заглушка для Logger_Print (в будущем будет писать в очередь)
 // ============================================================================
-static void draw_menu(int current_selection) {
-    clear();
+void Logger_Print(const char* format, ...) {
+    // В будущем здесь будет Queue_Push(&Queue_logs, ...)
+    // Пока ничего не делаем, чтобы не ломать ncurses
+}
 
-    // Верхний баннер-инструкция 
-    attron(A_REVERSE); // Инвертируем цвета (выделенный фон)
+
+// ============================================================================
+// Функции отрисовки экранов
+// ============================================================================
+static UI_State_t Draw_Main_Menu(void) {
+
+	static int menu_selection = 0;
+
+    clear();
+    attron(A_REVERSE);
     mvprintw(0, 0, " CONTROL MYLOGGER (Luckfox Pico Ultra W) ");
     attroff(A_REVERSE);
     
@@ -54,87 +67,145 @@ static void draw_menu(int current_selection) {
     mvprintw(6, 0, "========================================================================");
     mvprintw(7, 0, "                             Main Menu                                  ");
     mvprintw(8, 0, "========================================================================");
+	attron(A_REVERSE);
+	mvprintw(10, 2, "%s <---", menu_items[0]);
+	attroff(A_REVERSE);
+	int i = 1;
+	while(i < (int)NUM_MENU_ITEMS){
+		mvprintw(10 + i, 2, "%s      ", menu_items[i]);
+		i++;
+	}
+	refresh();
 
-    // Отрисовка пунктов меню
-    for(int i = 0; i < (int)NUM_MENU_ITEMS; i++) {
-        if(i == current_selection) {
-            // Выделяем текущий пункт
-            attron(A_REVERSE);
-            mvprintw(10 + i, 2, "%s <---", menu_items[i]);
-            attroff(A_REVERSE);
-        } else {
-            // Обычные пункты
-            mvprintw(10 + i, 2, "%s      ", menu_items[i]);
+    while(1)
+    {
+        // Перерисовываем ТОЛЬКО сами пункты меню
+        for(int i = 0; i < (int)NUM_MENU_ITEMS; i++) {
+            if(i == menu_selection) {
+                attron(A_REVERSE);
+                // Заметьте: мы пишем пробелы в конце, чтобы "затереть" старые символы
+                // на случай, если предыдущая строка была длиннее
+                mvprintw(10 + i, 2, "%-40s <---", menu_items[i]); 
+                attroff(A_REVERSE);
+            } else {
+                mvprintw(10 + i, 2, "%-40s      ", menu_items[i]);
+            }
         }
-    }
-    
-    // Применяем изменения
-    refresh();
-}
-
-// ============================================================================
-// 1) Основная функция вызова меню. 
-// Она блокирует поток до тех пор, пока пользователь не нажмет Enter.
-// Возвращает номер выбранного пункта (от 0 до NUM_MENU_ITEMS - 1).
-// ============================================================================
-int main_menu(int default_selection)
-{
-    int current_selection = default_selection;
-    if (current_selection < 0 || current_selection >= (int)NUM_MENU_ITEMS) {
-        current_selection = 0;
-    }
-
-    // Включаем графический режим
-    init_menu_ui();
-    
-    int ch;
-    bool menu_running = true;
-
-    while (menu_running) {
-        // Отрисовываем меню с текущим выбранным пунктом
-        draw_menu(current_selection);
-
-        // Ждем нажатия клавиши (стрелки, Enter)
-        ch = getch();
-
-        switch (ch) {
+        
+        refresh(); // ncurses отправит в терминал только измененные пункты
+        // --- Блок обработки ввода ---
+        int key = getch();
+        switch (key) 
+		{
             case KEY_UP:
-                if (current_selection > 0) {
-                    current_selection--;
-                } else {
-                    current_selection = NUM_MENU_ITEMS - 1; // Циклический переход в конец
-                }
+                if (menu_selection > 0) menu_selection--;
+                else menu_selection = NUM_MENU_ITEMS - 1;
                 break;
                 
             case KEY_DOWN:
-                if (current_selection < (int)NUM_MENU_ITEMS - 1) {
-                    current_selection++;
-                } else {
-                    current_selection = 0; // Циклический переход в начало
-                }
+                if (menu_selection < (int)NUM_MENU_ITEMS - 1) menu_selection++;
+                else menu_selection = 0;
                 break;
                 
-            case '\n':       // Клавиша Enter в Linux/ncurses
+            case '\n':       
             case '\r':
             case KEY_ENTER:
-                menu_running = false; // Выходим из цикла меню
+                if (menu_selection == 0) return UI_STATE_LOG_VIEWER;
+                if (menu_selection == 1) return UI_STATE_CSV_CONTROL;
+                if (menu_selection == 2) return UI_STATE_LIVE_AVE;
+                if (menu_selection == 3) return UI_STATE_USB_DEVICES;
+                if (menu_selection == 4) return UI_STATE_EXIT; 
                 break;
                 
             case 'q':
             case 'Q':
-                // Быстрый выход из программы
-                menu_running = false;
-                current_selection = NUM_MENU_ITEMS - 1; // Предполагаем, что последний пункт - это Выход
+            case 27: // KEY_ESC
+                return UI_STATE_EXIT; 
+                
+            case ERR:
+                // Таймаут. В главном меню нам нечего обновлять по таймауту,
+                // поэтому просто ждем дальше.
                 break;
         }
     }
 
-    // Обязательно закрываем ncurses перед тем, как вернуть управление
-    // Это вернет консоль в нормальный вид, чтобы printf работал корректно
-    close_menu_ui();
-    
-    return current_selection;
+	return UI_STATE_EXIT;
 }
+
+static UI_State_t Draw_Log_Viewer(void) {
+    clear();
+    attron(A_REVERSE);
+    mvprintw(0, 0, " LOG VIEWER (Events from stdout/stderr) ");
+    attroff(A_REVERSE);
+    
+    mvprintw(2, 0, "Here will be logs from the Queue_logs.");
+    mvprintw(4, 0, "Press 'q' or 'Q' to return to Main Menu.");
+    refresh();
+}
+
+static UI_State_t Draw_CSV_Control(void) {
+    clear();
+    attron(A_REVERSE);
+    mvprintw(0, 0, " CSV LOGGING CONTROL ");
+    attroff(A_REVERSE);
+    
+    mvprintw(2, 0, "Status: [UNKNOWN]"); // В будущем брать статус из атомарного флага
+    mvprintw(4, 0, "Press [ENTER] to toggle recording.");
+    mvprintw(6, 0, "Press 'q' or 'Q' to return to Main Menu.");
+    refresh();
+}
+
+static UI_State_t Draw_Live_AVE(void) {
+    clear();
+    attron(A_REVERSE);
+    mvprintw(0, 0, " LIVE DATA (AVE Queue) ");
+    attroff(A_REVERSE);
+    
+    mvprintw(2, 0, "Here will be live data parsed from Queue_ave.");
+    mvprintw(4, 0, "Press 'q' or 'Q' to return to Main Menu.");
+    refresh();
+}
+
+static UI_State_t Draw_USB_List(void) {
+    clear();
+    attron(A_REVERSE);
+    mvprintw(0, 0, " CONNECTED USB DEVICES ");
+    attroff(A_REVERSE);
+    
+    mvprintw(2, 0, "Here will be a list of active /dev/ttyACM* ports.");
+    mvprintw(4, 0, "Press 'q' or 'Q' to return to Main Menu.");
+    refresh();
+}
+
+// ============================================================================
+// Главная функция-обработчик экрана (State Machine)
+// ============================================================================
+bool Display_Task_Loop(void){
+
+    static UI_State_t current_state = UI_STATE_MAIN_MENU;
+    switch (current_state) {
+        case UI_STATE_MAIN_MENU:
+            current_state = Draw_Main_Menu(); // Поток "застрянет" внутри, пока не вернется новое состояние
+            break;
+        case UI_STATE_LOG_VIEWER:
+            current_state = Draw_Log_Viewer();
+            break;
+        case UI_STATE_CSV_CONTROL:
+            current_state = Draw_CSV_Control();
+            break;
+        case UI_STATE_LIVE_AVE:
+            current_state = Draw_Live_AVE();
+            break;
+        case UI_STATE_USB_DEVICES:
+            current_state = Draw_USB_List();
+            break;
+        case UI_STATE_EXIT:
+            return false; // Выходим из цикла в main.c
+    }
+    return true;
+
+}
+
 
 
 // ============================================================================

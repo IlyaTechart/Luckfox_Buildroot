@@ -26,6 +26,15 @@
 
 
 typedef enum {
+    UI_STATE_MAIN_MENU,
+    UI_STATE_LOG_VIEWER,       // Режим 1: Просмотр логов
+    UI_STATE_CSV_CONTROL,      // Режим 2: Управление записью CSV
+    UI_STATE_LIVE_AVE,         // Режим 3: Просмотр Live данных
+    UI_STATE_USB_DEVICES,      // Режим 4: Список USB устройств
+    UI_STATE_EXIT              // Состояние для выхода из меню 
+} UI_State_t;
+
+typedef enum {
     LOG_COLOR_DEFAULT = 0,
     LOG_COLOR_RED,
     LOG_COLOR_GREEN,
@@ -169,7 +178,19 @@ typedef enum {
 
 
 
-int main_menu(int default_selection);
+// Инициализация графической подсистемы
+void Display_Init(void);
+
+// Очистка перед выходом
+void Display_Deinit(void);
+
+// Главная функция-обработчик экрана (вызывается в цикле)
+// Возвращает false, если пользователь выбрал выход из программы
+bool Display_Task_Loop(void);
+
+// Очередь для логов (заглушка для будущего)
+void Logger_Print(const char* format, ...);
+
 void logger_print_one_frame(const ModulData_t *m, size_t frame_index, logger_color_t color);
 
 
