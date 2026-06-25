@@ -65,8 +65,7 @@ int Get_Discription_Connected_Devices(void)
         for (size_t i = 0; i < glob_result.gl_pathc; i++) {
             printf(" - %s\n", glob_result.gl_pathv[i]);
         }
-        // Т.к. сейчас мы делаем функционал только для ОДНОГО устройства,
-        // берём первое найденное (с индексом 0) и копируем его путь
+
         if(found_devices > 0){
             for(uint8_t WriteDev = 0; WriteDev < found_devices; WriteDev++ ){
                 snprintf( (char*)Thread_CDC_Device.COM_Ports_Handle[WriteDev].path_ttyACM, 
@@ -159,17 +158,20 @@ int main(int argc, char * argv[])
     printf("Поток вывода информации созадн\n");
 
 
-    Display_Init();
 
     while(1)
     {
         // Вызываем главный цикл меню (работает по принципу конечного автомата)
-        if (!Display_Task_Loop()) {
-            break; // Пользователь выбрал выход
-        }
+        sleep(2);
     }
 
-    Display_Deinit();
     printf("Программа завершилась\n");
     return 0;
 }
+
+/*
+Можно потом будет сделать:
+1) Инициализацию сокетов, один Unix, другой IP и в обоих склдывать данные в потоке который щас thread_display. Так же сделать соекты для приёма комнд. 
+2) Сделать графический GUI для подлключение к демону (этому проекту)
+3) Нужно ещё сделать выход из программы нормальный  
+*/

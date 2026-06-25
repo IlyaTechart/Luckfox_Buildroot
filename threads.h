@@ -74,7 +74,7 @@ typedef struct{
     pthread_cond_t cond_not_full; // Опционально, если очередь ограничена
 
     uint32_t len; // Общий рамер очереди в элементах очереди  
-    char name[30]; // Название очереди 
+    char name_device[30]; // Название очереди 
 }Queue_Handle_t;
 
 
@@ -102,8 +102,8 @@ extern Queue_Handle_t Queue_ave;
 
 
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
-void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode);
-int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode);
+int Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode, char* Name_device, size_t name_max_len);
+int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode, bool clean_flag, char* Name_device, size_t Name_device);
 void* thread_kernel_events(void* arg);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);

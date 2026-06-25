@@ -5,7 +5,7 @@
 
 // Глобальные переменные для меню
 static const char *menu_items[] = {
-    "1) Show data stream (Log Viewer)",
+    "1) Show event stream",
     "2) Enable/Disable CSV dump recording",
     "3) Show live data from device",
     "4) Show connected devices list",
@@ -62,7 +62,7 @@ static UI_State_t Draw_Main_Menu(void) {
     
     mvprintw(2, 0, "NAVIGATION INSTRUCTIONS:");
     mvprintw(3, 2, "Use [UP] and [DOWN] arrows to move.");
-    mvprintw(4, 2, "Press [ENTER] to select an option.");
+    mvprintw(4, 2, "Press [ENTER] to select an option. [Q] - Eixt");
 
     mvprintw(6, 0, "========================================================================");
     mvprintw(7, 0, "                             Main Menu                                  ");
@@ -95,6 +95,7 @@ static UI_State_t Draw_Main_Menu(void) {
         refresh(); // ncurses отправит в терминал только измененные пункты
         // --- Блок обработки ввода ---
         int key = getch();
+        mvprintw(18, 2, "%d      ", key);
         switch (key) 
 		{
             case KEY_UP:
@@ -182,6 +183,7 @@ static UI_State_t Draw_USB_List(void) {
 // ============================================================================
 bool Display_Task_Loop(void){
 
+    char veDebug;
     static UI_State_t current_state = UI_STATE_MAIN_MENU;
     switch (current_state) {
         case UI_STATE_MAIN_MENU:
@@ -202,6 +204,8 @@ bool Display_Task_Loop(void){
         case UI_STATE_EXIT:
             return false; // Выходим из цикла в main.c
     }
+    veDebug = current_state;
+    mvprintw(18, 2, "%d      ", veDebug);
     return true;
 
 }

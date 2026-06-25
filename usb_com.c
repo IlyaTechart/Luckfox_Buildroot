@@ -249,6 +249,35 @@ int USB_Remove_Device(COM_Ports_Handle_t* COM_Port, Thread_CDC_Device_t* Thread_
     return 0;
 }
 
+/// @brief Записывает имя устрйоства из глобального списка 
+/// @param COM_Port Указатель на струтуру COM_Ports_Handle_t
+/// @param Name Буффер куда будет записано имя 
+/// @param name_max_len Размер буфера 
+/// @return При удачном выполнении вернёт 0, в противном случае -1 
+int USB_Get_Name_Device(const COM_Ports_Handle_t* COM_Port, char* Name, size_t name_max_len)
+{
+    if (COM_Port == NULL || Name == NULL || name_max_len == 0) {
+        return -1; 
+    }
+    
+    const char* last_slash = strrchr(COM_Port->path_ttyACM, '/');
+    if (last_slash != NULL) {
+
+        const char* device_name = last_slash + 1;
+        
+        strncpy(Name, device_name, name_max_len - 1);
+        
+
+        Name[name_max_len - 1] = '\0';
+    } else {
+        // Если слэша нет вообще (например, строка просто "ttyACM0"),
+        // то копируем всю строку целиком.
+        strncpy(Name, COM_Port->path_ttyACM, name_max_len - 1);
+        Name[name_max_len - 1] = '\0';
+    }
+    return 0;
+}
+
 /// @brief Читает Head индивидульный фрейма 
 /// @param COMPort Указатель на струтуру COM_Ports_Handle_t
 /// @param read_head Указатель на переменную куда схораниться head фрейма 

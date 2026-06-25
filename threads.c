@@ -35,7 +35,6 @@ uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
     Queue->data = (ModulData_t*)calloc(len, sizeof(ModulData_t));
     Queue->len = len;
     Queue->count = 0;
-    snprintf( Queue->name, sizeof(Queue->name), "Dump queue");
     
     if(pthread_mutex_init(&Queue->mutex, NULL) != 0){
         perror("Ошибка инициализации мьютекса\n");
@@ -53,12 +52,22 @@ uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len)
     return 0;
 }
 
-/// @brief Функция записи ондого кадра в буфер. Если очередь переполнена, старые данные стираются.
-/// @param Queue Указатель на очередь 
-/// @param data_ptr Указатель на адрес типа ModulData_t одного кадра 
-/// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE)
-void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode)
+/// @brief 
+/// @param Queue Функция записи ондого кадра в буфер. Если очередь переполнена, старые данные стираются.
+/// @param data_ptr Указатель на адрес типа ModulData_t одного кадра.
+/// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE).
+/// @param Name_device Имя девайса с которого было записано в очередь. 
+int Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode, char* Name_device, size_t name_max_len)
 { 
+    if(Queue == NULL || data_ptr == NULL || Name_device == NULL || name_max_len == 0){
+        return -1;
+    }
+
+    size_t size_buf_queue = sizeof(Queue->name_device);
+    if(size_buf_queue < name_max_len){
+        return -2;
+    }
+
     pthread_mutex_lock(&Queue->mutex);
 
     if(Mode == QUEUE_WAIT_STATE){
@@ -86,6 +95,8 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
         Queue->count++;
     }
 
+    memcpy( Queue->name_device, Name_device, name_max_len);
+
     if(pthread_cond_signal(&Queue->cond_not_empty) != 0)
     {
         perror("Push: Неуспешное выполнение функции pthread_cond_signal\n");
@@ -94,14 +105,25 @@ void Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode
     pthread_mutex_unlock(&Queue->mutex);
 }
 
-/// @brief Чтение из буфера запрашивеймого колличества кадров. Если 
-/// @param Queue Указатель на очередь 
-/// @param data_ptr Указатель на массив куда будут записаны данные 
-/// @param cnt_read_frame Количесвто запрашиваемых кадров 
-/// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE)
-/// @return Колличество прочитанных кадров N
-int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode)
+/// @brief Чтение из буфера запрашивеймого колличества кадров.
+/// @param Queue Указатель на очередь.
+/// @param data_ptr Указатель на массив куда будут записаны данные. 
+/// @param cnt_read_frame Количесвто запрашиваемых кадров. 
+/// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE).
+/// @param clean_flag Если [true] то функция отчищает очередь после чтения, если [false] - то очередь не будет отчищина.  
+/// @param Name_device Буфер для записи имени девайса с которого было записано в очередь. 
+/// @param name_max_len Длина буфера для имени.
+/// @return Колличество прочитанных кадров N.
+int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode, bool clean_flag, char* Name_device, size_t Name_device)
 {
+    if(Queue == NULL || data_ptr == NULL || Name_device == NULL ){
+        return -1;
+    }
+
+    if(cnt_read_frame == 0 || Name_device == 0){
+        return -2;
+    }
+
     uint32_t count_copyed_frame = 0;
     pthread_mutex_lock(&Queue->mutex);
 
@@ -120,7 +142,9 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     while (count_copyed_frame < cnt_read_frame && Queue->count > 0){
 
         memcpy(data_ptr + count_copyed_frame, &Queue->data[Queue->tail], sizeof(ModulData_t));
-        memset(&Queue->data[Queue->tail], 0x00, sizeof(ModulData_t));
+        if(clean_flag){
+            memset(&Queue->data[Queue->tail], 0x00, sizeof(ModulData_t));
+        }
         Queue->tail = (Queue->tail + 1) % Queue->len;
         Queue->count--;
         count_copyed_frame++;
@@ -133,6 +157,9 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
     } 
 
     pthread_mutex_unlock(&Queue->mutex);
+    int len_string = strnlen(Queue->name_device, sizeof(Queue->name_device));
+    memcpy( Name_device, Queue->name_device, len_string);
+
     return count_copyed_frame;
 }
 
@@ -319,16 +346,18 @@ void* thread_cdc_generic(void* arg)
                     continue; // Переходим к следующему событию
                 }
 
+                char Name_Dev[30];
+                USB_Get_Name_Device(port, Name_Dev, sizeof(Name_Dev));
                 // Если все хорошо, раскидываем данные по очередям
                 if (Monitor_Msg.KindeOfFrame == READ_HEAD_AVE) {
                     Print_Mode = SHOW_AVE_MODE;
-                    Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE);
+                    Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev));
                 }
                 else if (Monitor_Msg.KindeOfFrame == READ_HEAD_DUMP) {
                     printf("Устройство %s передало правильный DUMP tail\n", Monitor_Msg.NameDev);
                     Print_Mode = SHOW_DUMP_MODE;
                     for (uint32_t t = 0; t < DumpData_Rx.count_elements; t++) {
-                        Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE);
+                        Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev));
                     }
                 }
                 

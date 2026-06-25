@@ -93,6 +93,7 @@ int USB_Read_COM(COM_Ports_Handle_t* COMPort, void* buffer, uint32_t size, uint3
 int USB_Finde_Free_Device(COM_Ports_Handle_t* COMPort);
 int USB_Finde_Device_Of_Path(char *path, COM_Ports_Handle_t* COMPort);
 int USB_Remove_Device(COM_Ports_Handle_t* COM_Port, Thread_CDC_Device_t* Thread_Devices);
+int USB_Get_Name_Device(const COM_Ports_Handle_t* COM_Port, char* Name, size_t name_max_len);
 ReadDataState_t Read_Head_Frame(COM_Ports_Handle_t* COMPort, uint32_t *read_head);
 int Read_Count_Frame(COM_Ports_Handle_t* COMPort, Package_t *DumpData_Rx);
 int Read_Data_Payload(COM_Ports_Handle_t* COMPort, Package_t *Data_Rx);
