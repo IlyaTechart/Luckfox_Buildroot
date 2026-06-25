@@ -124,8 +124,9 @@ int main(int argc, char * argv[])
 
     USB_Buffers_Init();
 
-    Queue_Init(&Queue_dump, TAKE_MEMORY_FOR_ELEMENTS);
-    Queue_Init(&Queue_ave, SIZE_QUEUE_DISPLAY_ELEMENTS);
+    Queue_Init(&Queue_dump_for_display, TAKE_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_dump_for_file, TAKE_MEMORY_FOR_ELEMENTS);
+    Queue_Init(&Queue_ave_for_display, SIZE_QUEUE_DISPLAY_ELEMENTS);
     
     int result;
 

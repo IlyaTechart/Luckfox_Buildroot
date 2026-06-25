@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <time.h>
-#include <ncurses.h>
+//#include <ncurses.h>
 #include "frames_structure.h"
 
 
@@ -178,18 +178,18 @@ typedef enum {
 
 
 
-// Инициализация графической подсистемы
-void Display_Init(void);
+// // Инициализация графической подсистемы
+// void Display_Init(void);
 
-// Очистка перед выходом
-void Display_Deinit(void);
+// // Очистка перед выходом
+// void Display_Deinit(void);
 
-// Главная функция-обработчик экрана (вызывается в цикле)
-// Возвращает false, если пользователь выбрал выход из программы
-bool Display_Task_Loop(void);
+// // Главная функция-обработчик экрана (вызывается в цикле)
+// // Возвращает false, если пользователь выбрал выход из программы
+// bool Display_Task_Loop(void);
 
-// Очередь для логов (заглушка для будущего)
-void Logger_Print(const char* format, ...);
+// // Очередь для логов (заглушка для будущего)
+// void Logger_Print(const char* format, ...);
 
 void logger_print_one_frame(const ModulData_t *m, size_t frame_index, logger_color_t color);
 

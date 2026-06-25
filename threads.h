@@ -96,14 +96,15 @@ pthread_t pthread_display;
 pthread_t pthread_filesystem;
 
 /// @brief Экземпляры очередей 
-extern Queue_Handle_t Queue_dump;
-extern Queue_Handle_t Queue_ave;
+extern Queue_Handle_t Queue_dump_for_display;
+extern Queue_Handle_t Queue_dump_for_file;
+extern Queue_Handle_t Queue_ave_for_display;
 
 
 
 uint8_t Queue_Init(Queue_Handle_t* Queue, uint32_t len);
 int Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode, char* Name_device, size_t name_max_len);
-int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode, bool clean_flag, char* Name_device, size_t Name_device);
+int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode, bool clean_flag, char* Name_device, size_t size_name_buf);
 void* thread_kernel_events(void* arg);
 void* thread_cdc_generic(void* arg);
 void* thread_display(void* arg);

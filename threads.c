@@ -11,14 +11,14 @@
 
 /// @brief Привязанные структуры к их потокам 
 pthread_t pthread_kernel_events;
-pthread_t pthread_heandler_karnel_event;
 pthread_t pthread_cdc_generic;
 pthread_t pthread_display;
 pthread_t pthread_filesystem;
 
 /// @brief Экземпляры очередей 
-Queue_Handle_t Queue_dump;
-Queue_Handle_t Queue_ave;
+Queue_Handle_t Queue_dump_for_display;
+Queue_Handle_t Queue_dump_for_file;
+Queue_Handle_t Queue_ave_for_display;
 
 /// @brief Для режимов работы thread_display 
 Print_Mode_t Print_Mode = SHOW_NONE;
@@ -110,17 +110,18 @@ int Queue_Push(Queue_Handle_t* Queue, ModulData_t* data_ptr, Queue_state_t Mode,
 /// @param data_ptr Указатель на массив куда будут записаны данные. 
 /// @param cnt_read_frame Количесвто запрашиваемых кадров. 
 /// @param Mode Режим работы функции (с ожиданием принимающей стороны - QUEUE_WAIT_STATE или без - QUEUE_PASS_STATE).
+/// Если QUEUE_PASS_STATE, то функция отдаст N элементов в наличии, если QUEUE_WAIT_STATE - будет жадть пока не накопиться cnt_read_frame элементов. 
 /// @param clean_flag Если [true] то функция отчищает очередь после чтения, если [false] - то очередь не будет отчищина.  
 /// @param Name_device Буфер для записи имени девайса с которого было записано в очередь. 
 /// @param name_max_len Длина буфера для имени.
 /// @return Колличество прочитанных кадров N.
-int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode, bool clean_flag, char* Name_device, size_t Name_device)
+int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_frame, Queue_state_t Mode, bool clean_flag, char* Name_device, size_t size_name_buf)
 {
     if(Queue == NULL || data_ptr == NULL || Name_device == NULL ){
         return -1;
     }
 
-    if(cnt_read_frame == 0 || Name_device == 0){
+    if(cnt_read_frame == 0 || size_name_buf == 0){
         return -2;
     }
 
@@ -144,9 +145,9 @@ int Queue_Pop(Queue_Handle_t *Queue, ModulData_t* data_ptr, uint32_t cnt_read_fr
         memcpy(data_ptr + count_copyed_frame, &Queue->data[Queue->tail], sizeof(ModulData_t));
         if(clean_flag){
             memset(&Queue->data[Queue->tail], 0x00, sizeof(ModulData_t));
+            Queue->count--;
         }
         Queue->tail = (Queue->tail + 1) % Queue->len;
-        Queue->count--;
         count_copyed_frame++;
         
     }
@@ -315,7 +316,8 @@ void* thread_cdc_generic(void* arg)
                         printf("strlen не смог найти терминальный ноль");
                         continue;
                     }
-                    memcpy( COM_Ports_Handle[FreeDev].path_ttyACM,  msg.device_path, strlen(msg.device_path) );
+                    strncpy(COM_Ports_Handle[FreeDev].path_ttyACM, msg.device_path, sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) - 1);
+                    COM_Ports_Handle[FreeDev].path_ttyACM[sizeof(COM_Ports_Handle[FreeDev].path_ttyACM) - 1] = '\0';
                     USB_Add_New_Device(&COM_Ports_Handle[FreeDev]);
                     Epoll_Add(Epoll_Context_USB, COM_Ports_Handle[FreeDev].File_Descriptor , EPOLLIN, &COM_Ports_Handle[FreeDev].Epoll_User_Data);
                     
@@ -351,13 +353,14 @@ void* thread_cdc_generic(void* arg)
                 // Если все хорошо, раскидываем данные по очередям
                 if (Monitor_Msg.KindeOfFrame == READ_HEAD_AVE) {
                     Print_Mode = SHOW_AVE_MODE;
-                    Queue_Push(&Queue_ave, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev));
+                    Queue_Push(&Queue_ave_for_display, AVE_Data_Rx.buffer, QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev, sizeof(Name_Dev)));
                 }
                 else if (Monitor_Msg.KindeOfFrame == READ_HEAD_DUMP) {
                     printf("Устройство %s передало правильный DUMP tail\n", Monitor_Msg.NameDev);
                     Print_Mode = SHOW_DUMP_MODE;
                     for (uint32_t t = 0; t < DumpData_Rx.count_elements; t++) {
-                        Queue_Push(&Queue_dump, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev));
+                        Queue_Push(&Queue_dump_for_display, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev, sizeof(Name_Dev)));
+                        Queue_Push(&Queue_dump_for_file, &DumpData_Rx.buffer[t], QUEUE_WAIT_STATE, Name_Dev, strnlen(Name_Dev, sizeof(Name_Dev)));
                     }
                 }
                 
@@ -387,7 +390,8 @@ void* thread_display(void* arg)
         
         // 1. Проверяем, есть ли что-то в очереди AVE
         // Используем QUEUE_PASS_STATE (неблокирующий вызов), чтобы не зависнуть, если там пусто
-        int ave_count = Queue_Pop(&Queue_ave, &ModulDataPrintAVE, 1, QUEUE_PASS_STATE);
+        char NameDevice[30];
+        int ave_count = Queue_Pop(&Queue_ave_for_display, &ModulDataPrintAVE, 1, QUEUE_PASS_STATE, true, NameDevice, sizeof(NameDevice));
         
         if (ave_count > 0) {
             logger_print_one_frame(&ModulDataPrintAVE, index_count, LOG_COLOR_DEFAULT);
@@ -395,10 +399,10 @@ void* thread_display(void* arg)
         }
         // 2. Проверяем, есть ли что-то в очереди DUMP
         // Читаем сколько есть, но не больше NUMBER_ELLEMENTS_RECESIVE
-        int dump_count = Queue_Pop(&Queue_dump, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE);
+        int dump_count = Queue_Pop(&Queue_dump_for_display, ModulDatPrintDump, NUMBER_ELLEMENTS_RECESIVE, QUEUE_PASS_STATE, true, NameDevice, sizeof(NameDevice));
         
         if (dump_count > 0) {
-            printf("Количество элементов в очереди DUMP: %u, прочитали: %d\n", Queue_dump.count, dump_count);
+            printf("Количество элементов в очереди DUMP: %u, прочитали: %d\n", Queue_dump_for_display.count, dump_count);
             for(uint32_t i = 0; i < dump_count; i++) {
                 if(ModulDatPrintDump[i].packet.alarms.raw != 0) {
                     logger_print_one_frame(&ModulDatPrintDump[i], i, LOG_COLOR_RED);
@@ -418,10 +422,11 @@ void* thread_filesystem(void* arg)
 {
     COM_Ports_Handle_t *COM_Ports_Device = Thread_CDC_Device.COM_Ports_Handle;
 
+    ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
     while(1)
     {
-        ModulData_t* DataFrameBuff = (ModulData_t*)calloc(NUMBER_ELLEMENTS_RECESIVE, sizeof(ModulData_t));
-        int popped_elements = Queue_Pop(&Queue_dump, DataFrameBuff, 1000, QUEUE_WAIT_STATE);
+        char NameDevice[30];
+        int popped_elements = Queue_Pop(&Queue_dump_for_file, DataFrameBuff, 1000, QUEUE_WAIT_STATE, true, NameDevice, sizeof(NameDevice));
 
         if(popped_elements > 0)
         {
@@ -438,7 +443,6 @@ void* thread_filesystem(void* arg)
             }
             free(FileFormatBuff);
         }
-        free(DataFrameBuff);
         // //const char* remote_file  = "ilya73@192.168.1.107:/home/ilya73/ttyACM0.csv";
         // const char* remote_file  = "q@172.18.147.195:/home/q/ttyACM0.csv";
         // const char* local_path  = "/userdata/dumps_log/LogTtyACM0";
@@ -457,6 +461,7 @@ void* thread_filesystem(void* arg)
 
     }
 
+    free(DataFrameBuff);
 }
 
 
