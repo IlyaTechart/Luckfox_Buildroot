@@ -1,8 +1,10 @@
 
+#define _DEFAULT_SOURCE 
 #define _POSIX_C_SOURCE 199309L
 #include "usb_com.h"
 #include <time.h>
-
+#include <termios.h>
+#include <poll.h>
 
 
 
@@ -95,8 +97,6 @@ uint32_t USB_Add_New_Device(COM_Ports_Handle_t* COM_Port)
     return 0;
 
 }
-
-#include <poll.h>
 
 /// @brief Основная функция чтения данных из COM порта (оптимизирована под non-blocking)
 /// @param COMPort Структура на читаемое устройство
